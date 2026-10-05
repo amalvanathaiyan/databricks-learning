@@ -1,3 +1,5 @@
 # Docs
 
-Setup notes, glossary and cheat sheets.
+Setup notes, glossary, cheat sheets and certification material.
+
+- [Data Engineer Associate study guide](certification/data_engineer_associate.md)
