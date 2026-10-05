@@ -3,7 +3,7 @@
 Interview questions from every lesson, with short spoken-style answers.
 Practise by covering the answer, saying yours out loud, then comparing.
 
-**336 questions** across 49 lessons.
+**429 questions** across 63 lessons.
 
 Generated from each notebook's **Interview Q&A** section by `tools/build_question_bank.py`.
 Edit the notebooks, then run the script again.
@@ -1455,3 +1455,405 @@ I check the plan for the join strategy and whether the small side was broadcast,
 **27. The same notebook gives different results when re-run. Why?**
 
 Non-deterministic expressions such as `uuid()` are recomputed per action, unordered operations such as `dropDuplicates` or `first` pick arbitrary rows, or sorts have ties. I add deterministic ordering and tie-breakers, and materialize results that must be stable.
+
+## 03 Delta Lake
+
+### 01_delta_fundamentals
+
+**1. What is Delta Lake?**
+
+An open-source storage layer that stores data as Parquet files plus a transaction log. The log brings ACID transactions, schema enforcement and evolution, `UPDATE`/`DELETE`/`MERGE`, time travel, and file-level statistics to data lakes. It's the default table format on Databricks.
+
+**2. How does Delta provide ACID guarantees?**
+
+Every change writes new data files first, then commits by atomically creating the next numbered JSON file in `_delta_log`, which lists the files added and removed. Readers only see files from committed versions, so writes are atomic and isolated. Concurrent writers use optimistic concurrency control: if two try to create the same version, one retries after checking for conflicts. Committed versions are durable in cloud storage.
+
+**3. What is the difference between a managed and an external table?**
+
+For a managed table, Unity Catalog manages both metadata and storage, and dropping the table deletes the data. An external table's data lives at a path you specify, and dropping it removes only the metadata. Managed tables are recommended, because they get automatic optimizations.
+
+**4. What happens to the old data when you overwrite a Delta table?**
+
+The new version references the new files and marks the old ones as removed in the log, but the files stay on storage until `VACUUM` deletes them after the retention period. So old versions can still be queried or restored.
+
+**5. Why can't you read a Delta table with `spark.read.parquet`?**
+
+You'd read every Parquet file in the folder, including files that later commits removed. Only the transaction log knows which files are part of the current version.
+
+### 02_creating_and_querying_tables
+
+**1. What is the difference between `CREATE OR REPLACE TABLE` and `DROP TABLE` followed by `CREATE TABLE`?**
+
+`CREATE OR REPLACE` is a single atomic operation that writes a new version, so the history and time travel survive, and readers never see a missing table. `DROP` plus `CREATE` creates a brand-new table with no history, and there's a moment when the table doesn't exist.
+
+**2. What is the difference between `INSERT INTO` and `INSERT OVERWRITE`?**
+
+`INSERT INTO` appends rows. `INSERT OVERWRITE` replaces all existing data (or the matching partitions) in a new version, keeping the table definition and history.
+
+**3. What is CTAS, and what are its trade-offs?**
+
+`CREATE TABLE ... AS SELECT` creates and fills a table from a query in one step. It's convenient, but the schema is inferred from the query, so you don't declare constraints or exact types upfront unless you cast.
+
+**4. How do you find out how a table was defined?**
+
+`SHOW CREATE TABLE`, `DESCRIBE TABLE EXTENDED` for columns, comments and details, `DESCRIBE DETAIL` for format, files, size and properties, and `DESCRIBE HISTORY` for how it changed.
+
+**5. Why add comments to tables and columns?**
+
+They document meaning, units and ownership where everyone sees them: Catalog Explorer, lineage, and AI tools such as Genie use them to understand the data.
+
+### 03_acid_and_delta_log
+
+**1. How does Delta Lake provide ACID guarantees?**
+
+Writers create new Parquet files and then commit by atomically creating the next numbered JSON file in `_delta_log`, listing the files added and removed. That makes each change atomic. Readers build a snapshot from the log and only see committed files, which gives isolation. Schema checks and constraints run before the commit, for consistency. Cloud storage makes commits durable. Concurrent writers use optimistic concurrency control.
+
+**2. What is in a Delta commit file?**
+
+One JSON action per line: `add` and `remove` for data files (with per-file statistics), `metaData` for the schema and properties, `protocol` for the required reader and writer versions, and `commitInfo` with the operation, user and metrics.
+
+**3. What is a checkpoint in the Delta log?**
+
+A Parquet file, written every 10 commits by default, that stores the full table state at that version. Readers start from the latest checkpoint instead of replaying every JSON commit.
+
+**4. What is optimistic concurrency control in Delta?**
+
+Writers don't lock the table. They prepare their changes and try to commit the next version. If another commit got there first, Delta checks whether the changes conflict. Non-conflicting changes, such as appends, are retried automatically, and conflicting ones fail with a concurrent modification exception.
+
+**5. What happens if a write fails halfway?**
+
+Its commit file is never created, so the files it wrote are invisible and the table stays at the previous version. `VACUUM` later removes the orphan files.
+
+**6. How does an `UPDATE` work if Parquet files are immutable?**
+
+Delta rewrites the files containing matching rows (copy-on-write), removing the old files and adding new ones in one commit. With deletion vectors, it can instead mark rows as deleted and write only the changed rows.
+
+### 04_schema_enforcement
+
+**1. What is schema enforcement in Delta Lake?**
+
+Delta validates every write against the table's schema and rejects writes with extra columns, incompatible types, or nulls in `NOT NULL` columns. The check happens before commit, so a bad write leaves the table unchanged.
+
+**2. What kinds of differences does Delta accept on write?**
+
+Missing nullable columns, which are filled with null (or the column's default). DataFrame writes otherwise need matching types, while SQL `INSERT` casts values using ANSI assignment rules, for example `INT` into `BIGINT`. New columns and incompatible types are rejected.
+
+**3. Why is schema enforcement useful?**
+
+It stops upstream changes from silently corrupting downstream tables, and it fails fast at load time with a clear error instead of breaking reports later.
+
+**4. How is this different from writing Parquet files?**
+
+A Parquet folder accepts files with any schema. Problems only appear when reading, as dropped columns, nulls or type errors. Delta keeps one schema in the log and validates every write.
+
+**5. How do you allow intentional schema changes?**
+
+With schema evolution: `mergeSchema` on an append, `overwriteSchema` on an overwrite, `WITH SCHEMA EVOLUTION` or auto-merge for `MERGE`, or explicit `ALTER TABLE ... ADD COLUMNS`.
+
+### 05_schema_evolution
+
+**1. What is the difference between schema enforcement and schema evolution?**
+
+Enforcement rejects writes that don't match the table schema. Evolution deliberately lets the schema change, for example adding new columns, through options such as `mergeSchema`, `overwriteSchema` or `ALTER TABLE`.
+
+**2. What is the difference between `mergeSchema` and `overwriteSchema`?**
+
+`mergeSchema` is used with appends (and merges) to add new columns to the existing schema, keeping the existing data. `overwriteSchema` is used with an overwrite to replace the schema entirely, including dropping columns or changing types, because all the data is replaced.
+
+**3. How do you rename or drop a column in a Delta table without rewriting the data?**
+
+Enable column mapping by name (`delta.columnMapping.mode = 'name'`), then use `ALTER TABLE ... RENAME COLUMN` or `DROP COLUMN`. Those become metadata-only changes.
+
+**4. How do you handle new columns in a `MERGE`?**
+
+On Databricks, with `MERGE WITH SCHEMA EVOLUTION`, or with the session setting `spark.databricks.delta.schema.autoMerge.enabled`. New source columns used by `UPDATE SET *` or `INSERT *` are then added to the target.
+
+**5. Where would you allow automatic schema evolution in a medallion architecture?**
+
+In Bronze and usually Silver, where capturing new source fields is valuable. Gold tables keep explicit schemas, because dashboards and consumers depend on them.
+
+### 06_update_delete
+
+**1. How does Delta perform an `UPDATE` when Parquet files are immutable?**
+
+By default with copy-on-write: it finds the files containing matching rows, writes new versions of those files with the changes, and commits removing the old files and adding the new ones atomically. With deletion vectors, it marks the old rows as deleted in a small side file and writes only the changed rows, which is much cheaper.
+
+**2. What are deletion vectors?**
+
+A Delta feature that records deleted or updated row positions per data file in a compact bitmap, instead of rewriting the file. Readers filter those rows out. The files are physically rewritten later, by `OPTIMIZE` or `REORG`.
+
+**3. Does `DELETE` physically remove the data?**
+
+Not immediately. The rows disappear from the current version, but older files stay for time travel until `VACUUM` removes files older than the retention period. With deletion vectors, `REORG TABLE ... APPLY (PURGE)` rewrites files to physically drop the rows.
+
+**4. How do you update a table using values from another table?**
+
+With `MERGE INTO target USING source ON key WHEN MATCHED THEN UPDATE SET ...`, because Delta's `UPDATE` can't join to another table.
+
+**5. How can you see how expensive a DML operation was?**
+
+In `DESCRIBE HISTORY`, the `operationMetrics` show updated, deleted and copied rows, files added and removed, and deletion vectors added.
+
+### 07_merge_upserts
+
+**1. What does `MERGE INTO` do in Delta Lake?**
+
+It matches source rows to target rows on a condition and, in a single atomic transaction, updates or deletes matched rows, inserts unmatched source rows, and optionally deletes target rows that have no source match. It's the standard way to do upserts and apply CDC.
+
+**2. How do you make an incremental load idempotent?**
+
+Use `MERGE` on the business key instead of appending, with a deduplicated source. Running the same batch twice then updates the same rows to the same values instead of duplicating them.
+
+**3. What is the difference between SCD Type 1 and Type 2?**
+
+Type 1 overwrites attributes with the latest values and keeps no history. Type 2 keeps every version as a separate row with validity dates and a current flag, so you can report on history.
+
+**4. How do you implement SCD Type 2 with `MERGE`?**
+
+Stage the changed records twice: once with the real key, which matches the current row and closes it by setting `is_current` to false and the end date, and once with a null merge key, which never matches and is therefore inserted as the new current version. New keys only need the insert copy.
+
+**5. What happens if the source has two rows for the same key?**
+
+The `MERGE` fails, because one target row can't be updated by multiple source rows. You deduplicate the source first, for example with `row_number()` ordered by timestamp.
+
+**6. How do you speed up a slow `MERGE`?**
+
+Keep the source small and deduplicated, add target predicates such as date ranges so fewer files are scanned, cluster or Z-order the target by the merge key, broadcast a small source, avoid updating unchanged rows, and enable deletion vectors.
+
+### 08_time_travel_restore
+
+**1. What is time travel in Delta Lake?**
+
+The ability to query a table as of an earlier version number or timestamp, using `VERSION AS OF` or `TIMESTAMP AS OF`, because the log records which files made up each version and old files are retained until `VACUUM`.
+
+**2. How do you undo a bad write to a Delta table?**
+
+Find the last good version with `DESCRIBE HISTORY`, confirm by querying it, then run `RESTORE TABLE t TO VERSION AS OF n`. That creates a new version equal to the old state, and the history is preserved.
+
+**3. What limits how far back you can time travel?**
+
+Log retention (`delta.logRetentionDuration`, 30 days by default) and file retention (`delta.deletedFileRetentionDuration`, 7 days by default). After `VACUUM` deletes files older than the file retention, versions that need them can't be read.
+
+**4. What is the difference between a shallow clone and a deep clone?**
+
+A shallow clone copies only the metadata and references the source's data files, so it's fast and cheap but depends on the source files. A deep clone copies both data and metadata into an independent table.
+
+**5. Give use cases for time travel.**
+
+Rolling back bad writes, auditing what changed and when, reproducing ML training data or reports on a pinned version, and debugging pipelines by comparing versions.
+
+### 09_optimize_vacuum
+
+**1. What is the small-files problem and how does Delta solve it?**
+
+Many small files make queries slow, because of per-file overhead in listing, opening and reading footers, and they waste metadata. Delta solves it with `OPTIMIZE`, which compacts files into larger ones, and on Databricks with optimized writes, auto compaction and predictive optimization.
+
+**2. What is the difference between `OPTIMIZE` and `VACUUM`?**
+
+`OPTIMIZE` rewrites small files into bigger ones and commits a new version, with the same data. `VACUUM` permanently deletes files that the current version no longer references and that are older than the retention period, which frees storage but limits time travel.
+
+**3. What is the default `VACUUM` retention and why does it exist?**
+
+7 days (`delta.deletedFileRetentionDuration`). It protects concurrent readers, long-running queries and streaming jobs that may still need older files, and it keeps a week of time travel.
+
+**4. Does `OPTIMIZE` affect streaming readers of a table?**
+
+No. Its commits are marked as not changing data (`dataChange = false`), so streams don't reprocess the compacted files.
+
+**5. What is predictive optimization?**
+
+A Databricks feature for Unity Catalog managed tables that automatically runs `OPTIMIZE`, `VACUUM` and statistics collection when it determines they're beneficial, removing the need to schedule maintenance yourself.
+
+### 10_partitioning_zorder_clustering
+
+**1. What is data skipping in Delta Lake?**
+
+Delta stores min and max values per column for each data file in the transaction log. At query time it compares filters with those ranges and skips files that can't contain matching rows, without opening them.
+
+**2. What does Z-ordering do?**
+
+`OPTIMIZE ... ZORDER BY (cols)` rewrites data so that rows with similar values of the chosen columns are stored in the same files, using a space-filling curve for several columns. Each file then covers narrow ranges, which makes data skipping effective.
+
+**3. What is liquid clustering and why is it recommended?**
+
+A Delta layout feature declared with `CLUSTER BY`. Data is clustered by the chosen keys and maintained incrementally by `OPTIMIZE` or predictive optimization. Keys can be changed without rewriting the table. It replaces both partitioning and Z-ordering, handles high-cardinality columns well, and with `CLUSTER BY AUTO` Databricks can even choose the keys.
+
+**4. When would you still partition a Delta table?**
+
+For very large tables (terabytes) with a low-cardinality column that almost every query filters on, typically a date, so that each partition is at least around 1 GB. Otherwise liquid clustering is the better default.
+
+**5. Partitioning vs Z-ordering?**
+
+Partitioning splits data into folders by column value and prunes whole folders, which suits low-cardinality columns. Z-ordering co-locates values inside files to improve file-level skipping, which suits high-cardinality columns. They can be combined, with Z-ordering within partitions, but liquid clustering now replaces both.
+
+### 11_change_data_feed
+
+**1. What is the change data feed in Delta Lake?**
+
+A table feature (`delta.enableChangeDataFeed`) that records row-level changes for each commit: inserts, deletes, and updates as pre- and post-images, with the version and timestamp. You read it with `readChangeFeed` or `table_changes()`.
+
+**2. What are the values of `_change_type`?**
+
+`insert`, `delete`, `update_preimage` (the row before the update) and `update_postimage` (the row after).
+
+**3. How would you use CDF to update a Gold aggregate incrementally?**
+
+Store the last Silver version processed, read changes since then, find the affected keys, recompute those keys from Silver (or apply deltas), `MERGE` them into Gold, and save the new version. Or let a streaming query with a checkpoint track the version.
+
+**4. CDF vs time travel?**
+
+Time travel returns a whole table snapshot at a version. CDF returns only the rows that changed between versions, with the type of change, which is what incremental processing needs.
+
+**5. Is CDF available for changes made before it was enabled?**
+
+No, only for commits after it's enabled, and only while the change files are within the retention period.
+
+### 12_constraints_generated_columns
+
+**1. What constraints does Delta Lake enforce?**
+
+`NOT NULL` and `CHECK` constraints are enforced on every write, and a violating write fails entirely. Primary and foreign keys in Unity Catalog are informational and not enforced.
+
+**2. What is a generated column?**
+
+A column whose value is computed from other columns by an expression declared in the table, such as `GENERATED ALWAYS AS (year(order_ts))`. Delta computes it on write, or validates it if a writer supplies a value.
+
+**3. How do you create surrogate keys in Delta?**
+
+With an identity column, `BIGINT GENERATED ALWAYS AS IDENTITY`. Delta assigns unique, increasing values. They can have gaps, so don't rely on them being consecutive.
+
+**4. What happens when you add a `CHECK` constraint to a table with existing invalid rows?**
+
+The `ALTER TABLE` fails. Delta validates existing data when the constraint is added.
+
+**5. Why use table constraints if the pipeline already validates data?**
+
+They protect the table from every writer, including ad hoc notebooks and other jobs, and they document the rules in the table itself. Pipeline checks handle quarantine and reporting, and constraints are the final guarantee.
+
+### 13_medallion_overview
+
+**1. Walk me through a medallion pipeline you'd build on Databricks.**
+
+Raw files land in a volume or cloud storage. Bronze ingests them append-only, with Auto Loader in production, keeping raw values plus audit columns such as source file, load time and batch. Silver casts and cleans the data, deduplicates to the latest record per business key, validates it (quarantining bad rows), and upserts with `MERGE` into a table with constraints and change data feed enabled. Gold aggregates Silver into business marts, updated incrementally from Silver's change feed with `MERGE`. Each layer is a Delta table, so every step is atomic, auditable and restorable.
+
+**2. What belongs in Bronze vs Silver vs Gold?**
+
+Bronze holds raw data as received, with audit columns, append-only. Silver holds cleaned, typed, deduplicated and validated entities, one row per key. Gold holds aggregated, business-level tables for reporting and serving.
+
+**3. How do you make each layer idempotent?**
+
+Bronze tracks which files were loaded (Auto Loader checkpoints). Silver uses `MERGE` on the business key with a deduplicated source and timestamp conditions. Gold uses `MERGE` on its grain, or recomputes affected partitions, and processing state (versions or checkpoints) records what's done.
+
+**4. Why use change data feed between Silver and Gold?**
+
+So Gold processes only the rows that changed since its last run, instead of rescanning all of Silver, which keeps the cost proportional to the changes.
+
+**5. How do you handle late or out-of-order events?**
+
+Keep event timestamps, deduplicate by latest event time, and only update Silver when the incoming event is newer than the stored one. Gold is then recomputed for the affected keys, including past dates.
+
+### 14_delta_interview_qa
+
+**1. What is Delta Lake and why use it instead of plain Parquet?**
+
+Delta Lake is an open table format that stores data as Parquet files plus a transaction log. The log gives ACID transactions, so failed writes never leave partial data and concurrent writers don't corrupt the table. It also gives schema enforcement and evolution, `UPDATE`, `DELETE` and `MERGE`, time travel and rollback, file-level statistics for data skipping, and a reliable streaming source and sink. Plain Parquet folders have none of that.
+
+**2. How does Delta provide ACID guarantees?**
+
+Every change writes new Parquet files and then commits by atomically creating the next numbered JSON file in `_delta_log`, listing the files added and removed. Atomicity comes from that single commit file. Readers build a snapshot from committed versions only, which gives isolation. Schema checks and constraints run before the commit, for consistency, and storage makes commits durable. Concurrent writers use optimistic concurrency control: if the version is taken, Delta checks for logical conflicts and retries or fails.
+
+**3. How do time travel and RESTORE work?**
+
+Each version is defined by the log, and removed files stay on storage until `VACUUM`. So `VERSION AS OF` or `TIMESTAMP AS OF` replays the log to that version and reads its files. `RESTORE` makes an old version current by writing a new commit, so the history is preserved. Time travel is limited by log retention (30 days by default) and file retention (7 days, enforced by `VACUUM`).
+
+**4. Explain MERGE and how you use it for SCD Type 2.**
+
+`MERGE` matches a source to a target on a key and, in one transaction, updates or deletes matched rows, inserts new ones, and optionally deletes target rows missing from the source. The source must be unique per key. For SCD2, I stage each changed record twice: once with its key, which matches and closes the current row by setting the end date and the current flag to false, and once with a null merge key, which doesn't match and is inserted as the new current row.
+
+**5. What do OPTIMIZE and VACUUM do?**
+
+`OPTIMIZE` compacts small files into larger ones, optionally clustering them, and commits a new version with the same data, which fixes the small-files problem. `VACUUM` permanently deletes data files not referenced by the current version and older than the retention period (7 days by default), which frees storage but ends time travel to versions that needed them. On Databricks, predictive optimization runs both for managed tables.
+
+**6. Partitioning vs Z-ordering vs liquid clustering?**
+
+All three improve data skipping by controlling which values share files. Partitioning splits data into folders by a low-cardinality column and prunes whole folders, which is good only for very large tables. Z-ordering rewrites files so nearby values of high-cardinality columns share files, but it's a full rewrite each time. Liquid clustering, with `CLUSTER BY`, does the same clustering incrementally, lets you change keys without rewriting, and replaces both. It's the recommended default.
+
+**7. What is in the `_delta_log`?**
+
+JSON commit files with `add`, `remove`, `metaData`, `protocol` and `commitInfo` actions, plus Parquet checkpoints every 10 commits.
+
+**8. Managed vs external table?**
+
+For a managed table, Unity Catalog manages the storage, and `DROP` deletes the data. An external table's data lives at your path, and `DROP` removes only the metadata.
+
+**9. Schema enforcement vs schema evolution?**
+
+Enforcement rejects writes that don't match the schema. Evolution allows changes on purpose, with `mergeSchema`, `overwriteSchema`, `ALTER TABLE`, or `MERGE WITH SCHEMA EVOLUTION`.
+
+**10. `mergeSchema` vs `overwriteSchema`?**
+
+`mergeSchema` adds new columns on append. `overwriteSchema` replaces the whole schema on overwrite.
+
+**11. How do you rename a column without rewriting data?**
+
+Enable column mapping (`delta.columnMapping.mode = 'name'`), then `ALTER TABLE ... RENAME COLUMN`.
+
+**12. What are deletion vectors?**
+
+Bitmaps that mark deleted rows in existing files, so `DELETE`, `UPDATE` and `MERGE` avoid rewriting whole files.
+
+**13. What is the change data feed?**
+
+Row-level changes per commit (insert, update pre- and post-image, delete), read with `readChangeFeed` or `table_changes()` for incremental processing.
+
+**14. Which constraints does Delta enforce?**
+
+`NOT NULL` and `CHECK`. Unity Catalog primary and foreign keys are informational.
+
+**15. What is an identity column?**
+
+`GENERATED ALWAYS AS IDENTITY`: unique, increasing surrogate keys assigned by Delta, possibly with gaps.
+
+**16. What does `DESCRIBE HISTORY` show?**
+
+Every version with its timestamp, user, operation, parameters and metrics.
+
+**17. What does `DESCRIBE DETAIL` show?**
+
+Format, location, number of files, size, partition and clustering columns, properties, and protocol versions.
+
+**18. Default retention periods?**
+
+Log retention is 30 days (`delta.logRetentionDuration`). Deleted file retention is 7 days (`delta.deletedFileRetentionDuration`).
+
+**19. What does `OPTIMIZE` do to streaming readers?**
+
+Nothing. Its commits are marked `dataChange = false`, so streams don't reprocess compacted files.
+
+**20. Shallow vs deep clone?**
+
+A shallow clone copies metadata and references the source's files. A deep clone copies data and metadata, so it's independent.
+
+**21. A bad deployment overwrote a Gold table an hour ago. What do you do?**
+
+Check `DESCRIBE HISTORY` to find the bad write and the last good version, compare the two versions to confirm, then `RESTORE TABLE ... TO VERSION AS OF` the good version. Then fix the job and add a check that would have caught it.
+
+**22. Queries on a Delta table have become slow over a few weeks. How do you investigate?**
+
+Check `DESCRIBE DETAIL` for the file count and average size, because many small files call for `OPTIMIZE` or auto compaction. Check whether the common filters can skip data, and if not, cluster by those columns. Check the query profile for files and bytes read. Also look at whether deletion vectors have accumulated without `OPTIMIZE`, and at whether storage and history have grown without `VACUUM`.
+
+**23. Two jobs writing to the same table sometimes fail with `ConcurrentAppendException`. Why, and what do you do?**
+
+Both modified overlapping files, so optimistic concurrency detected a conflict. I'd make them touch different partitions or clusters with explicit predicates, run them in sequence, or enable row-level concurrency with deletion vectors on Databricks.
+
+**24. A source starts sending a new column. What happens and what should you do?**
+
+Appends fail because of schema enforcement. If the column is wanted, enable `mergeSchema` (or schema evolution in Auto Loader and `MERGE`) for Bronze and Silver, and add it explicitly to Gold when the business needs it.
+
+**25. How do you make a daily load idempotent?**
+
+Use `MERGE` on the business key with a deduplicated source, or overwrite exactly the batch's data with `replaceWhere` or dynamic partition overwrite. Then re-running produces the same result.
+
+**26. The team must delete a customer's data for GDPR. What steps do you take on Delta?**
+
+`DELETE` the rows in every table holding them. With deletion vectors, `REORG TABLE ... APPLY (PURGE)` rewrites the files. Then `VACUUM` after the retention period, so old files containing the data are physically removed. Also consider change data feed files and clones.

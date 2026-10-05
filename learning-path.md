@@ -167,20 +167,20 @@ Execution flow to be able to draw and explain: Application → Driver → Job �
 
 **Goal:** Understand the storage layer behind the lakehouse.
 
-- [ ] `01_delta_fundamentals`: Parquet + transaction log, managed vs external tables
-- [ ] `02_creating_and_querying_tables`: SQL and `DeltaTable` API, `DESCRIBE DETAIL`
-- [ ] `03_acid_and_delta_log`: `_delta_log`, commits, checkpoints, optimistic concurrency
-- [ ] `04_schema_enforcement`: how and why Delta rejects bad writes
-- [ ] `05_schema_evolution`: `mergeSchema`, `overwriteSchema`, column mapping
-- [ ] `06_update_delete`: DML on Delta
-- [ ] `07_merge_upserts`: `MERGE INTO`, SCD Type 1 and Type 2
-- [ ] `08_time_travel_restore`: `VERSION AS OF`, `DESCRIBE HISTORY`, `RESTORE`
-- [ ] `09_optimize_vacuum`: `OPTIMIZE`, `VACUUM`, small-file problem, retention
-- [ ] `10_partitioning_zorder_clustering`: partitioning, Z-ordering, data skipping, liquid clustering
-- [ ] `11_change_data_feed`: enabling CDF, reading changes
-- [ ] `12_constraints_generated_columns`: `CHECK`, `NOT NULL`, generated and identity columns
-- [ ] `13_medallion_overview`: CSV/JSON/Parquet → Bronze → Silver → Gold concept
-- [ ] `14_delta_interview_qa`
+- [x] `01_delta_fundamentals`: Parquet + transaction log, managed vs external tables
+- [x] `02_creating_and_querying_tables`: SQL and `DeltaTable` API, `DESCRIBE DETAIL`
+- [x] `03_acid_and_delta_log`: `_delta_log`, commits, checkpoints, optimistic concurrency
+- [x] `04_schema_enforcement`: how and why Delta rejects bad writes
+- [x] `05_schema_evolution`: `mergeSchema`, `overwriteSchema`, column mapping
+- [x] `06_update_delete`: DML on Delta
+- [x] `07_merge_upserts`: `MERGE INTO`, SCD Type 1 and Type 2
+- [x] `08_time_travel_restore`: `VERSION AS OF`, `DESCRIBE HISTORY`, `RESTORE`
+- [x] `09_optimize_vacuum`: `OPTIMIZE`, `VACUUM`, small-file problem, retention
+- [x] `10_partitioning_zorder_clustering`: partitioning, Z-ordering, data skipping, liquid clustering
+- [x] `11_change_data_feed`: enabling CDF, reading changes
+- [x] `12_constraints_generated_columns`: `CHECK`, `NOT NULL`, generated and identity columns
+- [x] `13_medallion_overview`: CSV/JSON/Parquet → Bronze → Silver → Gold concept
+- [x] `14_delta_interview_qa`
 
 ---
 
@@ -353,7 +353,7 @@ Target architecture to be able to draw and explain: Sources → ADF / ADLS Gen2 
 | 00 | Platform tour | Complete | | 2026-10-05 |
 | 01 | Spark basics | Complete | | 2026-10-05 |
 | 02 | Spark internals | Complete | | 2026-10-05 |
-| 03 | Delta Lake | Not started | | |
+| 03 | Delta Lake | Complete | | 2026-10-05 |
 | 04 | Databricks | Not started | | |
 | 05 | Optimization | Not started | | |
 | 06 | Unity Catalog | Not started | | |
