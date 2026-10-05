@@ -37,7 +37,7 @@ for how the lessons map to the exam domains.
 | [02_spark_internals](02_spark_internals/) | Spark internals | ✅ Complete (15 lessons) |
 | [03_delta_lake](03_delta_lake/) | Delta Lake | ✅ Complete (14 lessons) |
 | [04_databricks](04_databricks/) | Databricks platform | ✅ Complete (9 lessons) |
-| 05_optimization | Performance and optimization | Not started |
+| [05_optimization](05_optimization/) | Performance and optimization | ✅ Complete (8 lessons) |
 | 06_unity_catalog | Unity Catalog | Not started |
 | 07_workflows | Jobs and pipelines | Not started |
 | 08_streaming_and_ingestion | Streaming and ingestion | Not started |

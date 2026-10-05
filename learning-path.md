@@ -202,14 +202,14 @@ Execution flow to be able to draw and explain: Application → Driver → Job �
 
 ## 05_optimization (1 week)
 
-- [ ] `01_reading_query_profiles`: Databricks query profile and Spark UI together
-- [ ] `02_data_skew`: detection, salting, AQE skew handling, broadcast
-- [ ] `03_small_files_and_file_layout`: compaction, file sizing, partition strategy
-- [ ] `04_memory_and_spill`: spill, OOM patterns, what to change
-- [ ] `05_join_optimization`: choosing strategies, hints, pre-aggregation
-- [ ] `06_avoiding_udfs_and_shuffles`: rewriting for performance
-- [ ] `07_cost_awareness`: DBUs, serverless vs classic, practical habits
-- [ ] `08_slow_job_debugging_playbook`: "a job is slow, how do you debug it?" step by step
+- [x] `01_reading_query_profiles`: Databricks query profile and Spark UI together
+- [x] `02_data_skew`: detection, salting, AQE skew handling, broadcast
+- [x] `03_small_files_and_file_layout`: compaction, file sizing, partition strategy
+- [x] `04_memory_and_spill`: spill, OOM patterns, what to change
+- [x] `05_join_optimization`: choosing strategies, hints, pre-aggregation
+- [x] `06_avoiding_udfs_and_shuffles`: rewriting for performance
+- [x] `07_cost_awareness`: DBUs, serverless vs classic, practical habits
+- [x] `08_slow_job_debugging_playbook`: "a job is slow, how do you debug it?" step by step
 
 ---
 
@@ -355,7 +355,7 @@ Target architecture to be able to draw and explain: Sources → ADF / ADLS Gen2 
 | 02 | Spark internals | Complete | | 2026-10-05 |
 | 03 | Delta Lake | Complete | | 2026-10-05 |
 | 04 | Databricks | Complete | | 2026-10-05 |
-| 05 | Optimization | Not started | | |
+| 05 | Optimization | Complete | | 2026-10-05 |
 | 06 | Unity Catalog | Not started | | |
 | 07 | Workflows | Not started | | |
 | 08 | Streaming and ingestion | Not started | | |

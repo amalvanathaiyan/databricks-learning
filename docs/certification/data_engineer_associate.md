@@ -112,7 +112,7 @@ Status: ✅ written · 🔜 planned (see `learning-path.md`)
 | Under-the-hood sections of lessons 04–25 (plans, shuffles, join strategies) | ✅ |
 | `02_spark_internals` (all 15 lessons: plans, shuffles, joins, AQE, Spark UI and query profile) | ✅ |
 | `04_databricks/08_monitoring_basics` | ✅ |
-| `05_optimization` | 🔜 |
+| `05_optimization` (all 8 lessons: profiles, skew, files, spill, joins, UDFs, cost, debugging playbook) | ✅ |
 
 ### 7. Governance and Security (15%)
 

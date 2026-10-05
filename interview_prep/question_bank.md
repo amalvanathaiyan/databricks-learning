@@ -3,7 +3,7 @@
 Interview questions from every lesson, with short spoken-style answers.
 Practise by covering the answer, saying yours out loud, then comparing.
 
-**492 questions** across 72 lessons.
+**530 questions** across 80 lessons.
 
 Generated from each notebook's **Interview Q&A** section by `tools/build_question_bank.py`.
 Edit the notebooks, then run the script again.
@@ -2129,3 +2129,173 @@ Check Query History for queuing versus long execution. If queries queue, increas
 **22. How would you let 200 business users explore sales data without writing SQL?**
 
 Build clean, documented Gold tables and views with a clear grain, then publish an AI/BI dashboard for the standard KPIs and a Genie space with instructions and example queries for ad hoc questions, all governed by Unity Catalog permissions.
+
+## 05 Optimization
+
+### 01_reading_query_profiles
+
+**1. How do you start investigating a slow query on Databricks?**
+
+I open its query profile (or the Spark UI on classic compute), sort operators by time, and look at the top ones: rows in and out, bytes and files read, shuffle sizes, spill, and the task time distribution. That tells me whether the problem is reading too much, moving too much, exploding rows, skew, or memory.
+
+**2. What signals in a profile point to missing data skipping?**
+
+A scan reading most files and bytes of a table even though the query filters on a column: few or zero files pruned. Usually the filter wraps the column in a function, uses a UDF, or the data isn't clustered on that column.
+
+**3. How do you spot a bad join in a profile?**
+
+The join outputs far more rows than its inputs (duplicate keys), it's a sort-merge join with a huge shuffle where one side is small (missing broadcast), or one task takes much longer than the others (skew).
+
+**4. What is spill and where do you see it?**
+
+Data written to disk because it didn't fit in memory during a sort, aggregation or join. It's reported per operator in the profile and per stage in the Spark UI.
+
+**5. What's the difference between `explain()` and a query profile?**
+
+`explain()` shows the plan before execution, without metrics. The profile shows the final executed plan, including AQE changes, with real metrics per operator.
+
+### 02_data_skew
+
+**1. One task takes much longer than the others. Why, and what do you do?**
+
+Usually data skew: after a shuffle, one partition holds far more data because a key is very frequent. I confirm it with the task time distribution and key counts. Then I fix it: let AQE's skew join handle it, broadcast the smaller side, process the hot keys separately, or salt the key so the hot key spreads over several partitions.
+
+**2. What is salting?**
+
+Adding a random number (0 to N-1) to a skewed key on the big side, and replicating the other side's rows for each salt value, so the hot key is split across N partitions. For aggregations, aggregate by key and salt first, then by key.
+
+**3. Why don't simple sums suffer much from skew?**
+
+Spark does partial aggregation in each map task, so only one row per key per task is shuffled. Aggregates that keep all values, such as `collect_list` or exact distinct counts, can't shrink like that and do suffer.
+
+**4. How does AQE handle skew?**
+
+After the map stage it knows the partition sizes. In sort-merge joins it splits partitions larger than a factor of the median and above a size threshold into smaller ones, and reads the matching data from the other side for each split.
+
+**5. How do you find skewed keys?**
+
+`groupBy(key).count().orderBy(desc)` on the join or grouping key, partition sizes after a shuffle, and the task metrics in the profile or Spark UI.
+
+### 03_small_files_and_file_layout
+
+**1. A job creates thousands of small files. Why, and what do you do?**
+
+Each write task produces files, so many tasks, many output partitions or frequent micro-batches create many small files. I fix the source by reducing write parallelism with `coalesce`/`repartition`, enabling optimized writes and auto compaction, and avoiding high-cardinality partitioning. I fix existing tables with `OPTIMIZE` (with liquid clustering) and then `VACUUM`, and I let predictive optimization maintain them.
+
+**2. Why are small files bad?**
+
+Every file costs listing, metadata, an open and a footer read, and many files mean more tasks and more planning time. With thousands of tiny files, this overhead dominates the actual reading, and the log and statistics grow too.
+
+**3. What is a good file size for Delta tables?**
+
+Roughly tens of megabytes up to about 1 GB. `OPTIMIZE` targets about 1 GB by default, and frequently merged tables benefit from smaller files.
+
+**4. How do you measure a table's layout?**
+
+`DESCRIBE DETAIL` for the file count and size, the `_metadata` column for per-file sizes and min/max of filter columns, and the query profile for files read and pruned.
+
+**5. What are optimized writes and auto compaction?**
+
+Databricks table properties. Optimized writes shuffle data before writing so each partition gets fewer, larger files. Auto compaction runs a small `OPTIMIZE` after writes when it finds many small files.
+
+### 04_memory_and_spill
+
+**1. What is spill in Spark?**
+
+When a task's execution memory is full during a sort, aggregation or join, Spark writes intermediate data to local disk and merges it later. The job continues but slows down because of disk I/O and serialization.
+
+**2. How is executor memory organized?**
+
+Part of the heap is reserved, a unified region (60% of the rest by default) is shared by execution (shuffles, joins, sorts, aggregations) and storage (cache, broadcasts), which can borrow from each other, and the remainder is user memory. Off-heap overhead covers Python workers, Arrow buffers and native memory.
+
+**3. What causes executor OOM errors, and how do you fix them?**
+
+Oversized partitions, skewed keys, collecting huge groups (`collect_list`), exploding arrays, large broadcasts and memory-heavy UDFs. I reduce data per task (filter early, more partitions), fix skew, replace unbounded collections with bounded aggregates, avoid explosions, and adjust UDF batch sizes, before adding memory.
+
+**4. What causes driver OOM?**
+
+Bringing too much data to the driver with `collect()`, `toPandas()` or large `display()` calls, broadcasting big tables, or very large plans and file listings. Keep driver results small and write large outputs to tables.
+
+**5. How do you see spill?**
+
+In the Spark UI's stage metrics ("Spill (memory)" and "Spill (disk)") on classic compute, and in the query profile's per-operator spill metrics on serverless and SQL warehouses.
+
+### 05_join_optimization
+
+**1. A join is slow. How do you debug it?**
+
+I open the query profile and check the join strategy, the rows in and out (explosion), the shuffle bytes on each side, and the task time distribution (skew). Then I apply the checklist: filter and select before joining, pre-aggregate the big side if only totals are needed, broadcast a small side, make sure keys are unique, typed consistently and free of placeholder values, and handle skewed keys. Then I measure again.
+
+**2. Why pre-aggregate before a join?**
+
+If the result only needs totals per key, aggregating the big side first reduces it to one row per key, so the join shuffles and compares far less data, with the same result.
+
+**3. When should you use a semi or anti join?**
+
+To check whether matching rows exist (semi) or don't exist (anti). They return each left row at most once and only the left columns, avoiding duplicates and an extra distinct.
+
+**4. What happens when join keys have different data types?**
+
+Spark adds a cast on one side for every row, which costs CPU, can prevent pushdown and data skipping, and can fail at runtime with ANSI mode if values don't convert.
+
+**5. What is dynamic file pruning?**
+
+When a fact table is joined to a filtered dimension, Databricks uses the dimension's matching key values at runtime to skip fact files (or partitions) that can't match, which works best when the fact table is clustered or partitioned by the join key.
+
+### 06_avoiding_udfs_and_shuffles
+
+**1. How would you speed up a PySpark job that uses several Python UDFs?**
+
+Replace each UDF with built-in functions: regex functions for parsing, `from_json` for JSON, map expressions or broadcast joins for lookups, date functions, and higher-order functions for arrays. Built-ins run in the JVM or Photon, are optimized and code-generated, and avoid Python serialization. Only if a Python library is truly needed, use a pandas UDF.
+
+**2. How do you add a group total to every row efficiently?**
+
+With a window function partitioned by the group key, for example `sum("amount").over(Window.partitionBy("region"))`, which needs one shuffle. A `groupBy` followed by a join back needs more.
+
+**3. How do you find unnecessary shuffles?**
+
+Count the `Exchange` operators in `explain()` or the query profile, and ask for each one whether it's required by a later operation. Typical waste: `repartition` before a `groupBy` on another key, `orderBy` in the middle, `distinct` before an aggregation that already deduplicates, and several separate aggregations of the same data.
+
+**4. When is a pandas UDF acceptable?**
+
+When the logic needs a Python library or numerical code with no built-in equivalent. It's vectorized over Arrow batches, so it's much faster than a row-by-row UDF, though still slower than built-ins.
+
+### 07_cost_awareness
+
+**1. What is a DBU?**
+
+A Databricks Unit: a normalized unit of processing capacity per hour. Each compute type consumes DBUs at a rate, and each SKU (jobs, all-purpose, SQL, serverless) has its own price per DBU. On classic compute you also pay the cloud provider for the VMs.
+
+**2. How would you reduce the cost of a Databricks pipeline?**
+
+First measure with `system.billing.usage` and the query profiles to find the top consumers. Then: run scheduled work on job compute or serverless instead of all-purpose, set auto-termination, right-size or autoscale clusters, process incrementally instead of full reloads, read less data (filters, clustering, pruning), remove waste in code (UDFs, skew, extra shuffles), avoid failed reruns, and use Photon where it shortens runs enough.
+
+**3. How do you find which jobs cost the most?**
+
+Query `system.billing.usage` grouped by `usage_metadata.job_id` (or `warehouse_id`, `cluster_id`) and join to `system.billing.list_prices` for estimated list cost, then rank them.
+
+**4. Why is serverless often cheaper even with a higher DBU price?**
+
+There's no idle time or startup waste: you pay only while work runs, and the infrastructure is included. For bursty, short or interactive workloads, that usually outweighs the rate difference.
+
+**5. How do tags help with cost?**
+
+Custom tags on clusters, jobs, warehouses and serverless budget policies appear in the billing usage records, so spend can be attributed to teams, projects or environments.
+
+### 08_slow_job_debugging_playbook
+
+**1. A job that took 20 minutes now takes 3 hours. How do you debug it?**
+
+First I find out what changed: data volume, code, cluster or upstream data. Then I open the Spark UI or query profile to find the slowest stage and operator, and check for skew (max task time vs median), spill, retries and the number of tasks. I read the plan for Python UDFs, extra shuffles, wrong join strategies, casts on join keys and filters that weren't pushed down, and I check the input for small files. I fix the biggest issue first, verify the output is identical, measure again, and document it.
+
+**2. How do you confirm that a performance fix didn't change the results?**
+
+Compare outputs from the old and new versions: row counts, key aggregates, and a full `exceptAll` comparison on a sample or on the whole output when it's affordable.
+
+**3. What signs of trouble do you look for in a physical plan?**
+
+`BatchEvalPython`/`ArrowEvalPython` (Python UDFs), many `Exchange` nodes (shuffles), `RoundRobinPartitioning` and `rangepartitioning` from unnecessary `repartition` and `orderBy`, `SortMergeJoin` where a broadcast would do, `cast` in join conditions, and filters that sit above joins or UDFs instead of near the scan.
+
+**4. Why does adding nodes often not help a skewed job?**
+
+The stage waits for its slowest task, and a hot key's rows all go to one task. More nodes only make the other tasks finish earlier. Fixing the skew (AQE skew join, filtering placeholder keys, salting, broadcasting) is what shortens the stage.
