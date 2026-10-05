@@ -3,7 +3,7 @@
 Interview questions from every lesson, with short spoken-style answers.
 Practise by covering the answer, saying yours out loud, then comparing.
 
-**429 questions** across 63 lessons.
+**492 questions** across 72 lessons.
 
 Generated from each notebook's **Interview Q&A** section by `tools/build_question_bank.py`.
 Edit the notebooks, then run the script again.
@@ -1857,3 +1857,275 @@ Use `MERGE` on the business key with a deduplicated source, or overwrite exactly
 **26. The team must delete a customer's data for GDPR. What steps do you take on Delta?**
 
 `DELETE` the rows in every table holding them. With deletion vectors, `REORG TABLE ... APPLY (PURGE)` rewrites the files. Then `VACUUM` after the retention period, so old files containing the data are physically removed. Also consider change data feed files and clones.
+
+## 04 Databricks
+
+### 01_workspace_notebooks_repos
+
+**1. How do you structure code in a Databricks project?**
+
+In a Git folder: thin notebooks as entry points that read parameters and call functions, Python modules in `src/` with the transformation logic, unit tests in `tests/`, and an Asset Bundle definition for jobs and environments. Data lives in Unity Catalog tables and volumes, not in the workspace.
+
+**2. What is the difference between `%run` and importing a module?**
+
+`%run` executes another notebook in the current context, sharing all its variables. Importing a workspace `.py` module shares only what you import, works with standard Python tooling, and is unit-testable, so it's preferred for production logic.
+
+**3. What are Git folders?**
+
+Workspace folders linked to a remote Git repository, where you can switch branches, commit, push and pull from the Databricks UI. They're the basis for code review and CI/CD.
+
+**4. What are workspace files?**
+
+Non-notebook files stored in the workspace, such as `.py`, `.sql`, `.yml` or `.json`. They let you build normal Python packages and keep config next to notebooks.
+
+**5. Where should data files go?**
+
+In Unity Catalog volumes (files) and tables (tabular data), with governance and lineage, not in workspace folders or Git.
+
+### 02_compute_types
+
+**1. What types of compute does Databricks offer?**
+
+Serverless compute for notebooks, jobs and pipelines, classic all-purpose clusters for interactive work, classic job clusters created per job run, SQL warehouses for SQL and BI, and instance pools that keep idle VMs warm to speed up classic cluster starts.
+
+**2. Why use job clusters or serverless jobs instead of an all-purpose cluster for production?**
+
+They exist only for the run, so you don't pay for idle time and the DBU rate is lower. Each run gets a clean, isolated environment that interactive users can't disturb.
+
+**3. What is a SQL warehouse?**
+
+Compute optimized for SQL queries, dashboards and BI tools, sized in T-shirt sizes with auto-stop and scaling for concurrency. Serverless warehouses start in seconds.
+
+**4. What are the trade-offs of serverless compute?**
+
+You get fast start-up, no infrastructure management and usage-based billing. In exchange you give up control over runtime details, node types, init scripts and some APIs, such as RDDs, `sparkContext` and caching.
+
+**5. What is a cluster policy?**
+
+An admin-defined set of rules and defaults for cluster creation, such as allowed node types, maximum workers, required tags and auto termination. It controls cost and enforces standards.
+
+**6. What is the difference between standard and dedicated access mode?**
+
+Standard (shared) access mode isolates each user's code so many users can share a Unity Catalog-enabled cluster safely. Dedicated access mode assigns the cluster to one user or group, which supports workloads that need full access.
+
+### 03_dbutils
+
+**1. What is `dbutils`?**
+
+The Databricks utilities available in notebooks, for file operations (`fs`), parameters (`widgets`), secrets (`secrets`), notebook orchestration (`notebook`) and passing values between job tasks (`jobs.taskValues`).
+
+**2. How do you pass parameters into a notebook?**
+
+Define widgets with `dbutils.widgets.text` or `dropdown` and read them with `dbutils.widgets.get`. When a job runs the notebook, job or task parameters with the same names fill the widgets.
+
+**3. How do you use credentials in a notebook securely?**
+
+Store them in a secret scope and read them with `dbutils.secrets.get(scope, key)`. The value is redacted in outputs and never appears in code or Git.
+
+**4. What is the difference between `%run` and `dbutils.notebook.run`?**
+
+`%run` executes another notebook inline in the same context, with no parameters or return value. `dbutils.notebook.run` starts it as a separate run with parameters and a timeout, and returns the value passed to `dbutils.notebook.exit`.
+
+**5. How do tasks in a job share information?**
+
+Through task values: `dbutils.jobs.taskValues.set` in one task and `get` in a downstream task, or references such as `{{tasks..values.}}` in parameters and conditions. For larger data, through tables.
+
+### 04_parameters_and_widgets
+
+**1. How do you parameterize a Databricks notebook?**
+
+Create widgets with defaults at the top (`text`, `dropdown`, `combobox`, `multiselect`), read them with `dbutils.widgets.get`, convert and validate them into a config object, and use those values in the code. Jobs pass parameters with the same names, which override the defaults.
+
+**2. What type are widget values?**
+
+Always strings, including multiselect, which is comma-separated. Convert them explicitly.
+
+**3. How do you use parameters in SQL safely?**
+
+With named parameter markers (`:name`), passed with `args=` in `spark.sql` or taken from widgets in SQL cells, and `IDENTIFIER(:name)` for table or column names. Never string formatting.
+
+**4. How does a job pass values to a notebook?**
+
+Through job or task parameters. Each one whose name matches a widget sets that widget's value for the run. Dynamic value references such as `{{job.start_time.iso_date}}` provide run-specific values.
+
+**5. How do you design a notebook for backfills?**
+
+Make the processing date a parameter, make every write idempotent for that date (for example `replaceWhere` or `MERGE`), and run the notebook once per date, in a loop or as separate job runs.
+
+### 05_secrets_and_scopes
+
+**1. How do you manage credentials in Databricks?**
+
+In secret scopes: Databricks-backed, or Azure Key Vault-backed on Azure. Secrets are created through the CLI, API or Terraform, read in code with `dbutils.secrets.get`, redacted in outputs, and protected by scope ACLs. For storage and external databases I prefer Unity Catalog storage credentials and connections, so no keys appear in code at all.
+
+**2. What does redaction do, and is it enough?**
+
+Printed secret values are replaced with `[REDACTED]` in notebook output. It prevents accidental exposure, but anyone with `READ` on the scope can still use the value in code, so ACLs and least privilege are what really protect it.
+
+**3. What permissions exist on a secret scope?**
+
+`READ` to read secrets, `WRITE` to add and update them, and `MANAGE` to also change ACLs and delete the scope.
+
+**4. What is a Key Vault-backed secret scope?**
+
+A scope on Azure Databricks that reads secrets directly from an Azure Key Vault, so secrets are created, rotated and audited in Azure, and Databricks only references them.
+
+**5. What do you do if a token was committed to Git?**
+
+Revoke or rotate it immediately, because it's compromised even if the commit is removed. Then store the new one in a secret scope, and consider scanning the repository and enabling secret scanning.
+
+### 06_sql_warehouse
+
+**1. What is a Databricks SQL warehouse?**
+
+Compute dedicated to SQL workloads: the SQL editor, dashboards, alerts, Genie and BI tools via JDBC/ODBC. It runs Photon, scales out for concurrency, auto-stops when idle, and serverless warehouses start in seconds.
+
+**2. How do you size a SQL warehouse?**
+
+Choose the size (T-shirt) for query complexity and data volume, and the min/max number of clusters for concurrency. If queries queue, add clusters. If single queries are slow, check the query first, then increase the size.
+
+**3. Serverless vs pro vs classic warehouses?**
+
+Serverless is managed by Databricks, starts in seconds and has the most features. Pro and classic run in your cloud account and start in minutes. Classic has the fewest features.
+
+**4. When would you use a SQL warehouse instead of a notebook on a cluster?**
+
+For SQL-only analytics: dashboards, BI tools, ad hoc SQL and Genie, especially with many concurrent users. Notebooks are for pipelines, Python work and exploration.
+
+**5. How can applications query Databricks without Spark?**
+
+Through a SQL warehouse, with the Statement Execution REST API, the Databricks SQL connectors (Python, JDBC/ODBC), or the SDKs.
+
+### 07_dashboards_and_genie
+
+**1. What are AI/BI dashboards in Databricks?**
+
+Dashboards built from SQL datasets and visual widgets, with filters and parameters, running on a SQL warehouse. They can be published with embedded or viewer credentials, shared with users and groups, and scheduled for email delivery.
+
+**2. What is a Genie space?**
+
+A natural-language interface over selected Unity Catalog tables. Users ask questions, Genie generates and runs SQL on a warehouse, and returns the answer with the SQL. Authors improve it with instructions and example queries.
+
+**3. What can a data engineer do to make Genie and dashboards accurate?**
+
+Provide clean Gold tables with clear names, a single grain, consistent units and column comments. Add views for common aggregations. Document business definitions in Genie instructions, add trusted example SQL, and test known questions.
+
+**4. How do permissions work for dashboards?**
+
+Data access is governed by Unity Catalog. A published dashboard can run queries with the publisher's embedded credentials, or with each viewer's own credentials, in which case viewers need `SELECT` on the underlying data.
+
+**5. Why keep heavy transformations out of dashboard queries?**
+
+Every refresh re-runs them on the warehouse, which is slow and costly, and logic gets duplicated across dashboards. Computing it once in Gold tables is faster, cheaper and consistent.
+
+### 08_monitoring_basics
+
+**1. How do you monitor data pipelines on Databricks?**
+
+At three levels. Jobs: run history, durations and failure notifications on every job. Queries: query history and profiles for slow statements. Data: freshness, volume and quality checks on key tables, using Delta history, expectations, table monitors and custom checks that fail a job to trigger alerts. System tables give a SQL view across all of it, including cost.
+
+**2. What are system tables?**
+
+Databricks-managed tables in the `system` catalog with operational data: billing usage and prices, query history, job runs, audit logs, lineage and more. They let you analyse cost, performance and access with SQL and build dashboards and alerts.
+
+**3. How would you find which job causes a cost increase?**
+
+Query `system.billing.usage` grouped by day and by usage metadata such as the job ID, compare periods, and join `system.billing.list_prices` for cost. Then check that job's run timeline for changes in frequency or duration.
+
+**4. How do you detect that a table is no longer being updated?**
+
+With a freshness check: compare the latest commit timestamp from `DESCRIBE HISTORY` (or the latest event time in the data) with the expected schedule, and alert when it's older than the threshold.
+
+**5. How do you send alerts?**
+
+Job and task notifications on failure, duration thresholds or success, Databricks SQL alerts on query results, and health-check jobs that fail when a check fails, routed to email, Slack or webhooks.
+
+### 09_databricks_interview_qa
+
+**1. Describe the Databricks platform architecture.**
+
+The control plane, managed by Databricks, hosts the web UI, notebooks, jobs and APIs. The compute plane runs the workloads: serverless compute in Databricks' account, or classic clusters in your cloud account. Data stays in your cloud storage as Delta tables and volumes, governed by Unity Catalog, which manages permissions, lineage and audit across workspaces. On top sit the tools: notebooks, jobs and pipelines, SQL warehouses, dashboards and Genie.
+
+**2. How do you choose compute for a workload?**
+
+Serverless notebooks for interactive work, serverless jobs or job clusters for scheduled pipelines, SQL warehouses for SQL, dashboards and BI, and classic clusters only when I need specific hardware, libraries or APIs. Production never runs on always-on all-purpose clusters, because job compute is cheaper and isolated.
+
+**3. How do you structure a Databricks project for production?**
+
+A Git folder with thin notebooks as entry points, transformation logic in Python modules with unit tests, configuration through parameters (widgets and job parameters), secrets in secret scopes, data in Unity Catalog tables and volumes, and deployment with Asset Bundles through CI/CD to dev, test and prod.
+
+**4. How do you handle parameters and secrets in notebooks?**
+
+Parameters come from widgets, filled by job parameters, and are validated at the top into a config object. In SQL they're passed as parameter markers and `IDENTIFIER()`. Secrets live in secret scopes and are read with `dbutils.secrets.get`, redacted in output, with ACLs controlling access. For storage and databases I prefer Unity Catalog credentials and connections.
+
+**5. How do you monitor a Databricks platform?**
+
+Job notifications and run history for pipelines, query history and profiles for SQL performance, freshness and volume checks from Delta history plus data quality checks for data, and system tables for cost, usage, job runs and audit, with dashboards and alerts on top.
+
+**6. Control plane vs compute plane?**
+
+The control plane is the Databricks-managed UI, APIs and job scheduler. The compute plane is where data is processed: serverless or your cloud account's clusters.
+
+**7. What is a Git folder?**
+
+A workspace folder linked to a remote Git repository, for branches, commits and pull requests in Databricks.
+
+**8. `%run` vs `dbutils.notebook.run`?**
+
+`%run` runs a notebook inline in the same context. `dbutils.notebook.run` runs it separately with parameters and returns a value.
+
+**9. How do job tasks share values?**
+
+Through `dbutils.jobs.taskValues`, or tables for larger data.
+
+**10. Widget value types?**
+
+Always strings.
+
+**11. What does `dbutils.secrets.get` show when printed?**
+
+`[REDACTED]`.
+
+**12. Size vs scaling on a SQL warehouse?**
+
+Size is for query complexity. Scaling (number of clusters) is for concurrency.
+
+**13. What is the Statement Execution API?**
+
+A REST API for running SQL on a SQL warehouse from applications, without Spark.
+
+**14. What is Genie?**
+
+Natural-language questions over Unity Catalog tables, answered with generated SQL on a warehouse.
+
+**15. What are system tables?**
+
+Tables in the `system` catalog with billing, query history, job runs, audit and lineage data.
+
+**16. What is an instance pool?**
+
+Idle, warm VMs that speed up classic cluster starts.
+
+**17. What is a cluster policy?**
+
+Admin rules that limit and default cluster settings, for cost and governance.
+
+**18. The monthly Databricks bill doubled. How do you investigate?**
+
+Query `system.billing.usage` by day, product and job or warehouse to find what grew, and join list prices for cost. Then look at that workload's runs, such as schedule changes, longer durations or a warehouse that never stops. Fix the cause and add a cost dashboard or alert.
+
+**19. A notebook works for you but fails as a scheduled job. What do you check?**
+
+That parameters and widgets are defined with defaults, that the job's identity has permissions on the tables, volumes and secrets, that it doesn't depend on temp views or state from another notebook, the compute and environment differences (libraries, serverless restrictions), and that paths aren't relative to a personal folder.
+
+**20. An API token was found in a notebook in Git. What do you do?**
+
+Revoke and rotate the token immediately, store the new one in a secret scope with tight ACLs, update the code to `dbutils.secrets.get`, and add secret scanning to the repository.
+
+**21. Analysts complain the dashboard is slow every Monday morning.**
+
+Check Query History for queuing versus long execution. If queries queue, increase the warehouse's max clusters. If single queries are slow, look at the profiles and pre-aggregate or cluster the Gold tables, and check that results can be cached.
+
+**22. How would you let 200 business users explore sales data without writing SQL?**
+
+Build clean, documented Gold tables and views with a clear grain, then publish an AI/BI dashboard for the standard KPIs and a Genie space with instructions and example queries for ad hoc questions, all governed by Unity Catalog permissions.

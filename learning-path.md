@@ -188,15 +188,15 @@ Execution flow to be able to draw and explain: Application → Driver → Job �
 
 **Goal:** Apply what you learned using Databricks features properly.
 
-- [ ] `01_workspace_notebooks_repos`: workspace organization, Git folders
-- [ ] `02_compute_types`: serverless, all-purpose, job compute, pools (conceptual where limited)
-- [ ] `03_dbutils`: `fs`, `widgets`, `secrets`, `notebook`, `jobs.taskValues`
-- [ ] `04_parameters_and_widgets`: parameterized notebooks
-- [ ] `05_secrets_and_scopes`: secret scopes, never hardcoding credentials
-- [ ] `06_sql_warehouse`: serverless SQL warehouses, SQL editor
-- [ ] `07_dashboards_and_genie`: dashboards, parameters, Genie spaces
-- [ ] `08_monitoring_basics`: run history, logs, system tables (as available)
-- [ ] `09_databricks_interview_qa`
+- [x] `01_workspace_notebooks_repos`: workspace organization, Git folders
+- [x] `02_compute_types`: serverless, all-purpose, job compute, pools (conceptual where limited)
+- [x] `03_dbutils`: `fs`, `widgets`, `secrets`, `notebook`, `jobs.taskValues`
+- [x] `04_parameters_and_widgets`: parameterized notebooks
+- [x] `05_secrets_and_scopes`: secret scopes, never hardcoding credentials
+- [x] `06_sql_warehouse`: serverless SQL warehouses, SQL editor
+- [x] `07_dashboards_and_genie`: dashboards, parameters, Genie spaces
+- [x] `08_monitoring_basics`: run history, logs, system tables (as available)
+- [x] `09_databricks_interview_qa`
 
 ---
 
@@ -354,7 +354,7 @@ Target architecture to be able to draw and explain: Sources → ADF / ADLS Gen2 
 | 01 | Spark basics | Complete | | 2026-10-05 |
 | 02 | Spark internals | Complete | | 2026-10-05 |
 | 03 | Delta Lake | Complete | | 2026-10-05 |
-| 04 | Databricks | Not started | | |
+| 04 | Databricks | Complete | | 2026-10-05 |
 | 05 | Optimization | Not started | | |
 | 06 | Unity Catalog | Not started | | |
 | 07 | Workflows | Not started | | |
