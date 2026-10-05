@@ -215,13 +215,13 @@ Execution flow to be able to draw and explain: Application → Driver → Job �
 
 ## 06_unity_catalog (1 week)
 
-- [ ] `01_catalog_hierarchy`: metastore → catalog → schema → table/view/volume/function
-- [ ] `02_managed_vs_external`: storage locations, managed vs external tables
-- [ ] `03_volumes`: files in volumes, vs DBFS and cloud paths
-- [ ] `04_permissions_grants`: `GRANT`, `REVOKE`, ownership, inheritance (as Free Edition allows)
-- [ ] `05_lineage_tags_discovery`: lineage, comments, tags
-- [ ] `06_views_and_functions`: views, materialized views, SQL UDFs
-- [ ] `07_pii_masking_row_filters`: column masks and row filters (conceptual if unavailable)
+- [x] `01_catalog_hierarchy`: metastore → catalog → schema → table/view/volume/function
+- [x] `02_managed_vs_external`: storage locations, managed vs external tables
+- [x] `03_volumes`: files in volumes, vs DBFS and cloud paths
+- [x] `04_permissions_grants`: `GRANT`, `REVOKE`, ownership, inheritance (as Free Edition allows)
+- [x] `05_lineage_tags_discovery`: lineage, comments, tags
+- [x] `06_views_and_functions`: views, materialized views, SQL UDFs
+- [x] `07_pii_masking_row_filters`: column masks and row filters (conceptual if unavailable)
 
 ---
 
@@ -356,7 +356,7 @@ Target architecture to be able to draw and explain: Sources → ADF / ADLS Gen2 
 | 03 | Delta Lake | Complete | | 2026-10-05 |
 | 04 | Databricks | Complete | | 2026-10-05 |
 | 05 | Optimization | Complete | | 2026-10-05 |
-| 06 | Unity Catalog | Not started | | |
+| 06 | Unity Catalog | Complete | | 2026-10-05 |
 | 07 | Workflows | Not started | | |
 | 08 | Streaming and ingestion | Not started | | |
 | 09 | Azure Databricks | Not started | | |

@@ -38,7 +38,7 @@ for how the lessons map to the exam domains.
 | [03_delta_lake](03_delta_lake/) | Delta Lake | ✅ Complete (14 lessons) |
 | [04_databricks](04_databricks/) | Databricks platform | ✅ Complete (9 lessons) |
 | [05_optimization](05_optimization/) | Performance and optimization | ✅ Complete (8 lessons) |
-| 06_unity_catalog | Unity Catalog | Not started |
+| [06_unity_catalog](06_unity_catalog/) | Unity Catalog | ✅ Complete (7 lessons) |
 | 07_workflows | Jobs and pipelines | Not started |
 | 08_streaming_and_ingestion | Streaming and ingestion | Not started |
 | 09_azure_databricks | Azure Databricks | Not started |

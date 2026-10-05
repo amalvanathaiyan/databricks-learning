@@ -127,7 +127,7 @@ Status: ✅ written · 🔜 planned (see `learning-path.md`)
 | `00_01_workspace_and_ui` (hierarchy intro) | ✅ |
 | `27_temporary_views` (views, permanent views in Unity Catalog) | ✅ |
 | `04_databricks/05_secrets_and_scopes` | ✅ |
-| `06_unity_catalog/01`–`07` | 🔜 |
+| `06_unity_catalog` (all 7 lessons: hierarchy, managed vs external, volumes, grants, lineage and tags, views and functions, masks and row filters) | ✅ |
 
 ## How to study with this repo
 

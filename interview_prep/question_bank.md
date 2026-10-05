@@ -3,7 +3,7 @@
 Interview questions from every lesson, with short spoken-style answers.
 Practise by covering the answer, saying yours out loud, then comparing.
 
-**530 questions** across 80 lessons.
+**561 questions** across 87 lessons.
 
 Generated from each notebook's **Interview Q&A** section by `tools/build_question_bank.py`.
 Edit the notebooks, then run the script again.
@@ -2299,3 +2299,143 @@ Compare outputs from the old and new versions: row counts, key aggregates, and a
 **4. Why does adding nodes often not help a skewed job?**
 
 The stage waits for its slowest task, and a hot key's rows all go to one task. More nodes only make the other tasks finish earlier. Fixing the skew (AQE skew join, filtering placeholder keys, salting, broadcasting) is what shortens the stage.
+
+## 06 Unity Catalog
+
+### 01_catalog_hierarchy
+
+**1. Describe the Unity Catalog object hierarchy.**
+
+A metastore is the top-level container, usually one per region, attached to workspaces. It contains catalogs, catalogs contain schemas, and schemas contain tables, views, volumes, functions and models. Objects are referenced with three-level names: `catalog.schema.object`. The metastore also holds storage credentials, external locations, connections and shares.
+
+**2. What is the difference between a catalog and a schema?**
+
+A catalog is the top-level grouping, typically used to separate environments or business units, and is the main boundary for isolation and access. A schema (database) groups related tables, views, volumes and functions inside a catalog, for example a medallion layer or a domain.
+
+**3. What is `hive_metastore` in a Unity Catalog workspace?**
+
+The workspace's legacy Hive metastore, exposed as a catalog for backward compatibility. It doesn't get Unity Catalog governance features like centralized grants and lineage, so new data should go into Unity Catalog catalogs.
+
+**4. How do you find all tables containing a column named `email`?**
+
+Query `information_schema.columns` in the catalog (or `system.information_schema.columns` for all catalogs) filtered on `column_name`.
+
+**5. Why use three-level names in production code?**
+
+They make the target explicit and independent of the session's current catalog and schema, which avoids reading from or writing to the wrong environment. The catalog part is usually a parameter.
+
+### 02_managed_vs_external
+
+**1. What is the difference between a managed and an external table?**
+
+For a managed table, Unity Catalog chooses and manages the storage location and lifecycle: dropping the table deletes the data (recoverable with `UNDROP` for 7 days). For an external table, you provide a `LOCATION` inside an external location: dropping it removes only the metadata, and the files stay.
+
+**2. When would you use an external table?**
+
+When other systems must read or write the files directly at a known path, when data must outlive the table definition, or for non-Delta formats in a landing zone. Otherwise managed tables are recommended.
+
+**3. What are storage credentials and external locations?**
+
+A storage credential wraps a cloud identity (an Azure managed identity, an AWS IAM role, a GCP service account) that can access storage. An external location combines a credential with a storage path. Privileges on the external location control who can create external tables or read files there, so users never handle cloud keys.
+
+**4. What benefits do managed tables get?**
+
+Predictive optimization (automatic `OPTIMIZE`, `VACUUM` and statistics), automatic liquid clustering, `UNDROP`, and faster metadata operations, all without managing paths.
+
+### 03_volumes
+
+**1. What is a Unity Catalog volume?**
+
+A schema-level object that governs a directory of files in cloud storage, accessible at `/Volumes////`. It brings grants, lineage and auditing to non-tabular and raw files.
+
+**2. What is the difference between managed and external volumes?**
+
+A managed volume's storage is chosen and managed by Unity Catalog, and dropping it deletes the files. An external volume points to a path in an external location, and dropping it leaves the files in place.
+
+**3. Why use volumes instead of DBFS or mount points?**
+
+The DBFS root and mounts aren't governed by Unity Catalog: anyone in the workspace can access them, and mounts share one credential. Volumes have fine-grained privileges (`READ VOLUME`, `WRITE VOLUME`), audit logging and lineage.
+
+**4. How can you read files in a volume?**
+
+With Spark readers or Auto Loader, SQL (`read_files`, `LIST`, `COPY INTO`), standard Python file APIs and libraries, and `dbutils.fs`.
+
+### 04_permissions_grants
+
+**1. What privileges does a user need to query a table in Unity Catalog?**
+
+`USE CATALOG` on the catalog, `USE SCHEMA` on the schema, and `SELECT` on the table, either directly or inherited from the schema or catalog. Owners already have all privileges on their objects.
+
+**2. How does privilege inheritance work?**
+
+A privilege granted on a catalog or schema applies to all current and future objects of the relevant type inside it. For example, `SELECT` on a schema lets the grantee read every table and view in it, including ones created later.
+
+**3. How would you set up read access for an analytics team to Gold tables?**
+
+Create or use a group, then `GRANT USE CATALOG` on the catalog and `GRANT USE SCHEMA, SELECT` on the Gold schema to that group. People get access by group membership, and new Gold tables are covered by inheritance.
+
+**4. What is the difference between ownership and `MANAGE`?**
+
+The owner has all privileges and can grant them. There is one owner per object. `MANAGE` lets other principals manage privileges, rename or drop the object without being the owner, which is useful for platform teams.
+
+**5. What does `USE SCHEMA` allow on its own?**
+
+Only traversing into the schema. It grants no access to data in the tables, so it's always combined with privileges like `SELECT`.
+
+### 05_lineage_tags_discovery
+
+**1. How does Unity Catalog capture lineage?**
+
+Automatically, for queries run on Unity Catalog-enabled compute: it records which tables and columns were read and written by notebooks, jobs, pipelines, SQL queries and dashboards. It's shown in Catalog Explorer and exposed in `system.access.table_lineage` and `system.access.column_lineage`.
+
+**2. How would you do impact analysis before changing a Silver table?**
+
+Look at the downstream lineage in Catalog Explorer, or query `system.access.table_lineage` (and `column_lineage` for specific columns) for targets whose source is the Silver table, then check the listed jobs, dashboards and owners.
+
+**3. What is the difference between comments and tags?**
+
+Comments are free-text documentation for people and AI tools. Tags are structured key-value labels used for classification, search and policies, for example tagging columns with `pii = email`.
+
+**4. How would you find all PII columns in a catalog?**
+
+Query `information_schema.column_tags` for the PII tag, and as a safety net search `information_schema.columns` for suspicious column names.
+
+### 06_views_and_functions
+
+**1. What is the difference between a view, a temporary view and a materialized view?**
+
+A view is a saved query in the catalog, computed every time it's queried, and can be granted. A temporary view is the same but scoped to one session and not stored in the catalog. A materialized view stores its results, which are refreshed on demand or on a schedule (incrementally when possible), so reads are fast.
+
+**2. How can you give analysts access to some columns of a table without giving access to the table?**
+
+Create a view selecting only those columns (or rows) and grant `SELECT` on the view. In Unity Catalog the view runs with its owner's privileges on the base table, so the analysts don't need access to the table itself.
+
+**3. Why define a function in Unity Catalog instead of a notebook UDF?**
+
+It's defined once and reusable from any notebook, job, SQL warehouse or dashboard, it's governed with `EXECUTE`, and SQL functions are inlined into the query plan, so they're as fast as built-ins.
+
+**4. When would you use a SQL table function?**
+
+When you need a parameterized view: the same query logic for different input values, such as orders for a given country or date range.
+
+### 07_pii_masking_row_filters
+
+**1. How do you implement column-level security in Unity Catalog?**
+
+Create a SQL masking function that returns the real value for authorized users (usually checked with `is_account_group_member`) and a masked value for others, then attach it with `ALTER TABLE ... ALTER COLUMN ... SET MASK`. Alternatively, a dynamic view, but then access to the base table must be revoked.
+
+**2. How do you implement row-level security?**
+
+With a row filter: a SQL function returning a boolean, attached with `ALTER TABLE ... SET ROW FILTER f ON (col)`. It often checks group membership or a mapping table of users and allowed values, so access changes are data changes.
+
+**3. Row filters and masks vs dynamic views: which do you prefer?**
+
+Row filters and column masks, because they're enforced on the table for every query and tool, and there's no base table to forget to lock down. Dynamic views are still useful for computed or reshaped outputs, or where filters and masks aren't supported.
+
+**4. What is the difference between masking and pseudonymization?**
+
+Masking hides values at query time based on who's asking, while the stored data is unchanged. Pseudonymization replaces values in the stored data (for example with a salted hash), so nobody can see the original from that dataset, but joins and counts still work.
+
+**5. Which functions are useful inside dynamic views and policies?**
+
+`current_user()` to identify the user, and `is_account_group_member('group')` to check account-level group membership. Mapping tables can be referenced with `EXISTS` subqueries.
