@@ -3,7 +3,7 @@
 Interview questions from every lesson, with short spoken-style answers.
 Practise by covering the answer, saying yours out loud, then comparing.
 
-**194 questions** across 29 lessons.
+**224 questions** across 34 lessons.
 
 Generated from each notebook's **Interview Q&A** section by `tools/build_question_bank.py`.
 Edit the notebooks, then run the script again.
@@ -845,3 +845,133 @@ A Delta Lake layout feature (`CLUSTER BY`) that clusters data files by chosen co
 **8. What is dynamic partition pruning?**
 
 When a partitioned table is joined to a filtered dimension, Spark uses the dimension's join keys at runtime to prune partitions of the fact table, even though the filter isn't directly on the fact table.
+
+### 26_spark_sql
+
+**1. Is Spark SQL slower or faster than the DataFrame API?**
+
+Neither. Both are parsed into a logical plan and optimized by Catalyst into the same physical plan, so the same logic performs the same. The choice is about readability and maintainability.
+
+**2. How do you run SQL on a DataFrame?**
+
+Register it with `createOrReplaceTempView("name")` and query the view with `spark.sql`, or pass it directly with `spark.sql("SELECT ... FROM {df}", df=df)`.
+
+**3. What is a CTE and does it improve performance?**
+
+A named subquery defined with `WITH`. It improves readability. Spark normally inlines CTEs into the plan, so it isn't materialized or faster by itself.
+
+**4. How does Spark execute an `EXISTS` or `IN` subquery?**
+
+The optimizer rewrites it as a left semi join, and `NOT EXISTS` as a left anti join.
+
+**5. How do you pass parameters to Spark SQL safely?**
+
+With named parameter markers, such as `:name` and `args={"name": value}`, and `IDENTIFIER(:tbl)` for table or column names. Never format user values into the SQL string, because that breaks on quotes and allows SQL injection.
+
+**6. Is `spark.sql` lazy?**
+
+For queries, yes: it returns a DataFrame that runs on an action. DDL and DML statements such as `CREATE TABLE`, `INSERT` or `MERGE` execute immediately.
+
+### 27_temporary_views
+
+**1. What is the difference between a temp view and a global temp view?**
+
+A temp view is visible only in the Spark session that created it and disappears when the session ends. A global temp view is shared across sessions of the same Spark application (cluster), lives in the `global_temp` schema, and disappears when the application stops.
+
+**2. What is the difference between a view and a table?**
+
+A table stores data. A view stores a query, which runs again every time the view is queried, so it always reflects current data and costs compute on each read.
+
+**3. Does creating a temp view cache the data?**
+
+No. It only registers the logical plan under a name. The query runs when the view is used.
+
+**4. Why can a temp view cause a job to fail even though the notebook worked interactively?**
+
+Each job task has its own Spark session, so a temp view from another task or notebook doesn't exist there. Shared intermediate results should be written as tables.
+
+**5. What is a materialized view?**
+
+A view whose results are precomputed and stored, then refreshed (incrementally when possible). Reads are fast like a table, and the logic stays declarative like a view. On Databricks they are managed by Lakeflow Declarative Pipelines or SQL warehouses.
+
+**6. Can a permanent view reference a temp view?**
+
+No. A permanent view is stored in the catalog and can be queried by others, so it can only depend on permanent objects.
+
+### 28_error_handling
+
+**1. When do errors occur in a Spark program?**
+
+Analysis errors (missing tables or columns, type mismatches, syntax) occur when Spark resolves the plan. Execution errors (bad casts under ANSI, division by zero, corrupt files, out of memory) occur only when an action runs the job, because of lazy evaluation.
+
+**2. How do you catch a specific Spark error in PySpark?**
+
+Catch `AnalysisException` or the base `PySparkException` from `pyspark.errors`, and branch on `e.getCondition()` (the error class) or `e.getSqlState()` instead of the message text.
+
+**3. How do you stop one bad row from failing a whole job?**
+
+Use the `try_*` functions such as `try_cast` and `try_divide`, which return null instead of failing, then count and quarantine those rows. For files, use `PERMISSIVE` mode with a corrupt-record column.
+
+**4. Should a pipeline ever swallow exceptions?**
+
+No. It should log the error with context and re-raise, so the job is marked failed and alerts fire. It can handle expected, recoverable cases explicitly, for example a retry of a transient error or quarantining bad rows below a threshold.
+
+**5. How do you implement retries correctly?**
+
+Retry only transient failures (timeouts, throttling), with a maximum number of attempts and exponential backoff. Logic or data errors are not retried. On Databricks, job tasks also have built-in retry settings.
+
+**6. Why prefer logging over print in pipelines?**
+
+Logs carry a timestamp, level and source, can be filtered and collected by the job's log system, and give consistent, searchable output.
+
+### 29_data_quality_checks
+
+**1. What data quality checks would you put in a pipeline?**
+
+Completeness (required columns not null), uniqueness of keys, validity (allowed values and formats), ranges, referential integrity against dimension tables, freshness, volume compared with history, and schema against a contract.
+
+**2. What do you do with rows that fail a check?**
+
+It depends on severity. Critical failures such as duplicate keys or a broken schema stop the pipeline. Row-level problems go to a quarantine table with the reason, so good rows continue and bad ones can be fixed and replayed. Minor drift raises a warning.
+
+**3. How do you make data quality checks efficient on big data?**
+
+Express rules as column expressions and evaluate them all in one aggregation, instead of one job per check. Flag rows once with a reasons column, then split good and bad rows from that.
+
+**4. What is the difference between a Delta constraint and a pipeline check?**
+
+A Delta constraint (`CHECK`, `NOT NULL`) is enforced by the table on every write, by any writer, and rejects the whole transaction if a row violates it. A pipeline check is code you run, which can warn, quarantine or fail with more flexible logic.
+
+**5. What are expectations in Lakeflow Declarative Pipelines?**
+
+Declarative data quality rules on pipeline datasets, with three actions: keep and record violations (warn), drop violating rows, or fail the update. Results are recorded in the pipeline's event log.
+
+**6. How do you check freshness?**
+
+Compare the maximum event or ingestion timestamp with the current time and alert if it is older than the agreed SLA.
+
+### 30_building_an_etl_pipeline
+
+**1. Walk me through the medallion architecture.**
+
+Bronze stores raw data as received, plus audit columns such as source file and load time, so it can be replayed. Silver holds cleaned, typed, deduplicated and validated data, one row per entity, often enriched with dimensions. Gold holds business-level aggregates and marts for reporting. Each layer is built from the previous one.
+
+**2. How do you make a batch pipeline idempotent?**
+
+Make every write replace exactly the data of the batch it processes: dynamic partition overwrite or `replaceWhere` per batch date, or `MERGE` on a business key. Then re-running a batch produces the same result instead of duplicates. I test it by running the pipeline twice and comparing outputs.
+
+**3. How do you handle bad records without failing the whole pipeline?**
+
+Land everything in Bronze as strings with a corrupt-record column, convert in Silver with `try_*` functions, attach reasons to rows that break rules, write them to a quarantine table, and fail the run only if the bad-row ratio exceeds a threshold.
+
+**4. How do you deduplicate in Silver?**
+
+Define the business key and an ordering that identifies the latest version (ingestion date, source file or an update timestamp), then keep `row_number() == 1` per key.
+
+**5. How do you prove the pipeline didn't lose data?**
+
+Reconciliation: Bronze rows must equal Silver rows plus quarantined rows plus removed duplicates, and Gold totals must match Silver totals. The run fails if they don't.
+
+**6. What would you change to run this on large, daily-growing data?**
+
+Ingest incrementally with Auto Loader, upsert Silver with `MERGE`, partition or cluster tables by date, orchestrate the layers as tasks in a Lakeflow Job with retries and alerts, and move the functions into a tested Python package.

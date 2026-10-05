@@ -33,7 +33,7 @@ for how the lessons map to the exam domains.
 | Folder | Topic | Status |
 |---|---|---|
 | [00_platform_tour](00_platform_tour/) | Platform tour | ✅ Complete (4 lessons) |
-| [01_spark_basics](01_spark_basics/) | PySpark basics (30 lessons) | 🟡 25 of 30 |
+| [01_spark_basics](01_spark_basics/) | PySpark basics (30 lessons) | ✅ Complete (30 lessons) |
 | 02_spark_internals | Spark internals | Not started |
 | 03_delta_lake | Delta Lake | Not started |
 | 04_databricks | Databricks platform | Not started |

@@ -43,11 +43,11 @@
 | 23 | [23_reading_parquet](23_reading_parquet.ipynb) | Columnar format, row groups, pruning, pushdown, `mergeSchema` |
 | 24 | [24_writing_data](24_writing_data.ipynb) | Save modes, tables vs paths, file counts, idempotent overwrites |
 | 25 | ⭐ [25_partitioning_files](25_partitioning_files.ipynb) | `partitionBy`, partition pruning, small files, liquid clustering |
-| 26 | `26_spark_sql` | SQL vs DataFrame API, CTEs, subqueries *(coming next)* |
-| 27 | `27_temporary_views` | Temp vs global temp views, scope *(coming next)* |
-| 28 | `28_error_handling` | try/except patterns, bad-record handling, logging *(coming next)* |
-| 29 | `29_data_quality_checks` | Reusable validation functions *(coming next)* |
-| 30 | `30_building_an_etl_pipeline` | End-to-end small ETL *(coming next)* |
+| 26 | [26_spark_sql](26_spark_sql.ipynb) | SQL vs DataFrame API, CTEs, subqueries, safe parameters |
+| 27 | [27_temporary_views](27_temporary_views.ipynb) | Temp, global temp and permanent views, materialized views |
+| 28 | [28_error_handling](28_error_handling.ipynb) | Analysis vs execution errors, error classes, `try_*`, logging, retries |
+| 29 | [29_data_quality_checks](29_data_quality_checks.ipynb) | Reusable checks, fail/warn/quarantine, Delta constraints |
+| 30 | ⭐ [30_building_an_etl_pipeline](30_building_an_etl_pipeline.ipynb) | Bronze → Silver → Gold, quarantine, reconciliation, idempotency |
 
 ## Running the lessons in Free Edition
 

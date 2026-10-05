@@ -60,7 +60,7 @@ Status: ✅ written · 🔜 planned (see `learning-path.md`)
 
 | Lesson | Status |
 |---|---|
-| `21_reading_csv`, `22_reading_json`, `23_reading_parquet`, `24_writing_data`, `25_partitioning_files` | ✅ |
+| `21_reading_csv`, `22_reading_json`, `23_reading_parquet`, `24_writing_data`, `25_partitioning_files`, `30_building_an_etl_pipeline` | ✅ |
 | `03_delta_lake/04_schema_enforcement`, `05_schema_evolution` | 🔜 |
 | `08_streaming_and_ingestion/01`–`03` (batch patterns, COPY INTO, Auto Loader), `09` (APIs and nested JSON) | 🔜 |
 
@@ -75,7 +75,7 @@ Status: ✅ written · 🔜 planned (see `learning-path.md`)
 | Lesson | Status |
 |---|---|
 | `04_schema_and_data_types` to `20_udfs` | ✅ |
-| `26_spark_sql` to `30_building_an_etl_pipeline` | 🔜 |
+| `26_spark_sql` to `30_building_an_etl_pipeline` | ✅ |
 | `03_delta_lake` (all), `08` 05–08 (medallion layers, incremental and late data) | 🔜 |
 
 ### 4. Working with Lakeflow Jobs (16%)
@@ -122,6 +122,7 @@ Status: ✅ written · 🔜 planned (see `learning-path.md`)
 | Lesson | Status |
 |---|---|
 | `00_01_workspace_and_ui` (hierarchy intro) | ✅ |
+| `27_temporary_views` (views, permanent views in Unity Catalog) | ✅ |
 | `06_unity_catalog/01`–`07`, `04_databricks/05_secrets_and_scopes` | 🔜 |
 
 ## How to study with this repo
