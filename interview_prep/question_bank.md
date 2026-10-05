@@ -3,7 +3,7 @@
 Interview questions from every lesson, with short spoken-style answers.
 Practise by covering the answer, saying yours out loud, then comparing.
 
-**224 questions** across 34 lessons.
+**336 questions** across 49 lessons.
 
 Generated from each notebook's **Interview Q&A** section by `tools/build_question_bank.py`.
 Edit the notebooks, then run the script again.
@@ -975,3 +975,483 @@ Reconciliation: Bronze rows must equal Silver rows plus quarantined rows plus re
 **6. What would you change to run this on large, daily-growing data?**
 
 Ingest incrementally with Auto Loader, upsert Silver with `MERGE`, partition or cluster tables by date, orchestrate the layers as tasks in a Lakeflow Job with retries and alerts, and move the functions into a tested Python package.
+
+## 02 Spark internals
+
+### 01_driver_executors
+
+**1. Explain the Spark architecture.**
+
+A Spark application has one driver and many executors. The driver runs the main program, builds the plan, splits it into jobs, stages and tasks, and schedules the tasks. Executors run on worker nodes, execute tasks in parallel on their cores, and hold shuffle data and cached blocks. A cluster manager such as YARN, Kubernetes or Databricks allocates the executor resources.
+
+**2. What does the driver do?**
+
+It holds the SparkSession, analyzes and optimizes the query, creates the DAG of stages, schedules tasks on executors, tracks their progress, retries failures, and receives results of actions such as `collect`.
+
+**3. What is an executor?**
+
+A JVM process on a worker node that runs tasks for one application. It has a fixed number of cores, which are task slots, and memory for execution, shuffle and caching.
+
+**4. How are cores, partitions and tasks related?**
+
+Each task processes one partition on one core. The number of tasks in a stage equals the number of partitions, and the number of tasks running at once is limited by the total executor cores.
+
+**5. What happens if an executor fails?**
+
+The driver reschedules its tasks on other executors. Lost shuffle or cached data is recomputed from the lineage. If the driver fails, the whole application fails.
+
+**6. Where does a Python UDF run?**
+
+On the executors, in Python worker processes started next to each executor. The function is serialized on the driver and shipped with the tasks.
+
+**7. What is Spark Connect?**
+
+A client-server architecture where the client sends logical plans over gRPC to a remote Spark driver and receives results as Arrow batches. Databricks serverless notebooks use it, so there is no local `sparkContext`.
+
+### 02_jobs_stages_tasks
+
+**1. What is the difference between a job, a stage and a task?**
+
+A job is created for each action. It's split into stages at shuffle boundaries, where each stage is a set of narrow transformations that can run without moving data. Each stage runs as tasks, one per partition, and each task runs on one core.
+
+**2. What creates a new stage?**
+
+A shuffle, which is an `Exchange` in the physical plan. Operations such as `groupBy`, `join` (non-broadcast), `distinct`, `repartition` and `orderBy` need one.
+
+**3. How many tasks does a stage have?**
+
+One per partition. The first stage has one task per input split, and a stage after a shuffle has one per shuffle partition, which AQE may coalesce.
+
+**4. What happens when there are more tasks than cores?**
+
+Tasks run in waves. Each core takes the next task when it finishes one, and the stage ends when the slowest task finishes.
+
+**5. Why might calling `count()` and then `show()` be slow?**
+
+Each action is a separate job that recomputes the plan from the source, unless the data is cached or materialized.
+
+**6. What is a skipped stage?**
+
+A stage whose shuffle output already exists from a previous job, so Spark reuses it instead of recomputing it.
+
+### 03_transformations_actions
+
+**1. What is the difference between a transformation and an action?**
+
+A transformation describes a new DataFrame and is lazy: Spark only adds it to the plan. An action asks for a result, such as returning rows or writing data, which triggers optimization and execution of the whole plan as a job.
+
+**2. Give examples of narrow and wide transformations.**
+
+Narrow: `select`, `filter`, `withColumn`, `union`, `coalesce`, which don't move data between partitions. Wide: `groupBy`, `join`, `distinct`, `orderBy`, `repartition`, which need a shuffle.
+
+**3. Is `show()` an action?**
+
+Yes. It runs a job to compute and fetch the first rows.
+
+**4. Is `cache()` an action?**
+
+No. It's lazy: it marks the DataFrame for caching, and the next action materializes it. On Databricks serverless it isn't supported.
+
+**5. Is `printSchema()` an action?**
+
+No. It only reads the analyzed plan's schema, so no job runs.
+
+**6. Can `spark.read` trigger a job?**
+
+Yes. Reading with schema inference (CSV `inferSchema`, or JSON without a schema) runs a job immediately to sample the data. With an explicit schema it is lazy.
+
+### 04_lazy_evaluation
+
+**1. What is lazy evaluation in Spark?**
+
+Transformations aren't executed when they're called. Spark records them in a logical plan, and only when an action is called does it optimize the whole plan and execute it.
+
+**2. Why is Spark lazy? What are the benefits?**
+
+Seeing the whole query lets the optimizer push filters down, prune unused columns, combine consecutive operations into one pass, choose join strategies, and stop early for `limit`. It also avoids computing anything that is never used.
+
+**3. What are the downsides of lazy evaluation?**
+
+Each action recomputes the plan from the source unless the result is materialized, and errors appear at the action rather than where they were caused, which makes debugging harder.
+
+**4. How can you prove Spark is lazy?**
+
+Time the definition of transformations (instant) against the action, or create a DataFrame whose execution would fail, such as dividing by zero, and show that defining it and printing its schema work while the action fails.
+
+**5. Can two actions on the same DataFrame return different results?**
+
+Yes, if the plan contains non-deterministic functions such as `uuid()`, because each action recomputes them. Materialize the result to make it stable. `rand()` gets its seed when the expression is created, so it repeats within the same DataFrame but changes when the DataFrame is rebuilt without a seed.
+
+### 05_dag_and_query_plans
+
+**1. What are the stages of query planning in Spark?**
+
+Parsing produces an unresolved logical plan. The analyzer resolves names and types against the catalog. The Catalyst optimizer applies rule-based (and some cost-based) optimizations to produce an optimized logical plan. The planner turns that into a physical plan with concrete operators, and whole-stage code generation compiles parts of it. AQE can then re-optimize at runtime.
+
+**2. How do you read a physical plan?**
+
+Bottom-up, from the scans to the result. I check the scans for `ReadSchema`, `PushedFilters` and `PartitionFilters`, count the `Exchange` operators to see the shuffles and stages, and check which join strategy was chosen.
+
+**3. What does `Exchange` mean in a plan?**
+
+A shuffle: data is redistributed between partitions, for example `hashpartitioning` for a groupBy or join, or `rangepartitioning` for a sort. Each exchange is a stage boundary.
+
+**4. What does the `*(1)` prefix mean?**
+
+The operator is part of whole-stage code generation stage 1: those operators are fused into one generated Java function that processes rows in a single loop.
+
+**5. What is the difference between the logical and the physical plan?**
+
+The logical plan describes **what** to compute (relational operations). The physical plan describes **how**: which join algorithm, which aggregation strategy, where to shuffle.
+
+**6. What is a DAG in Spark?**
+
+The directed acyclic graph of stages that the DAG scheduler builds from the physical plan, split at shuffle boundaries, with edges showing which stage's output feeds the next.
+
+### 06_narrow_wide_transformations
+
+**1. What is the difference between narrow and wide transformations?**
+
+In a narrow transformation each output partition depends on one input partition, so there's no data movement and steps are pipelined in one stage. In a wide transformation an output partition depends on many input partitions, so data must be shuffled across the cluster and a new stage starts.
+
+**2. Give examples of each.**
+
+Narrow: `select`, `filter`, `withColumn`, `union`, `coalesce`, `explode`. Wide: `groupBy`, `join` (non-broadcast), `distinct`, `orderBy`, `repartition`, window functions with `partitionBy`.
+
+**3. Is `coalesce` narrow or wide? And `repartition`?**
+
+`coalesce` is narrow, because it merges existing partitions without a shuffle. `repartition` is wide, because it shuffles every row to create new, balanced partitions.
+
+**4. How can a join avoid a shuffle?**
+
+By broadcasting the small side, so the big side is joined partition by partition without moving. Or if both sides are already partitioned by the join key, for example after a repartition or with bucketing on classic Hive tables.
+
+**5. Why do wide transformations affect fault tolerance?**
+
+A lost partition after a shuffle depends on all parent partitions. Spark keeps shuffle files so it doesn't recompute everything, but if those files are lost with an executor, the map tasks must be re-run.
+
+### 07_shuffle
+
+**1. What is a shuffle?**
+
+The redistribution of data across partitions so that rows with the same key end up in the same partition. It's needed by wide transformations such as `groupBy`, `join`, `distinct` and `orderBy`, and it creates a stage boundary.
+
+**2. How does a shuffle work internally?**
+
+Each map task computes the target partition for every row, buffers and sorts by partition, and writes a data file and an index file to local disk. After all map tasks finish, each reduce task fetches its blocks from every map output over the network, merges them, and continues processing.
+
+**3. Why is a shuffle expensive?**
+
+It serializes data, writes it to disk, transfers it over the network, reads and deserializes it again, uses memory that can cause spill, and forces a barrier between stages.
+
+**4. How do you reduce shuffle cost?**
+
+Filter and select early, broadcast small join sides, avoid unnecessary repartition, orderBy and distinct, rely on partial aggregation, choose a sensible number of shuffle partitions, and handle skewed keys.
+
+**5. What does `spark.sql.shuffle.partitions` control?**
+
+The number of partitions after a shuffle in DataFrame and SQL operations, 200 by default. With AQE, Spark coalesces small partitions at runtime, so the actual number is often lower.
+
+**6. What is spill?**
+
+When a task's data doesn't fit in its execution memory, Spark writes intermediate data to disk and merges it later. It's slower and usually means partitions are too large or skewed.
+
+### 08_partitioning_and_parallelism
+
+**1. How are partitions, cores and tasks related?**
+
+Each partition is processed by one task, and each task runs on one core. The number of partitions sets how many tasks a stage has, and the number of cores sets how many run at once.
+
+**2. What is the difference between `repartition` and `coalesce`?**
+
+`repartition` does a full shuffle and produces evenly sized partitions, and it can increase or decrease the count. `coalesce` only decreases the count by merging existing partitions without a shuffle, which is cheaper but can leave uneven partitions and can pull upstream work into fewer tasks.
+
+**3. How does Spark decide the number of partitions when reading files?**
+
+It splits large splittable files into chunks of `spark.sql.files.maxPartitionBytes` (128 MB by default) and packs small files together, counting an open cost per file. Non-splittable files such as gzip are read whole by one task.
+
+**4. How many partitions should a job have?**
+
+Enough to keep partitions around 100–200 MB and to have at least 2–3 times as many tasks as cores. Then I check sizes for skew. With AQE, Spark coalesces shuffle partitions automatically.
+
+**5. When would you use `repartition` by a column?**
+
+To co-locate rows with the same key before several operations on that key, or before `partitionBy` writes, so each output folder gets a small number of files.
+
+**6. What does `repartitionByRange` do?**
+
+It samples the data to choose boundaries and puts rows into partitions by ranges of the column, so each partition holds a contiguous, sorted range. It's useful before writing data that will be filtered by that column.
+
+### 09_broadcast_and_join_strategies
+
+**1. Broadcast join vs sort-merge join?**
+
+A broadcast hash join sends a copy of the small table to every executor, so the large table is joined in place with no shuffle. It's very fast, but only if the small side fits in memory. A sort-merge join shuffles both sides by the join key, sorts them, and merges them. It scales to any size, but pays for two shuffles and sorts. Spark broadcasts automatically below `autoBroadcastJoinThreshold` (10 MB), or when hinted, or when AQE detects a small side at runtime.
+
+**2. What join strategies does Spark have?**
+
+Broadcast hash, sort-merge, shuffled hash, broadcast nested loop, and cartesian product. The first three need an equi-join condition. The last two handle non-equi conditions.
+
+**3. How do you force a broadcast join?**
+
+With `F.broadcast(df)` or `df.hint("broadcast")` in PySpark, or `/*+ BROADCAST(t) */` in SQL. Then I verify `BroadcastHashJoin` in the plan.
+
+**4. When should you not broadcast?**
+
+When the small side is large (hundreds of MB to GB), because it's collected on the driver and copied to every executor. Also, the preserved side of an outer join can't be broadcast.
+
+**5. How does AQE affect join strategy?**
+
+After the shuffle stages run, AQE knows the real sizes. It can convert a planned sort-merge join into a broadcast join if one side turns out small, and split skewed partitions in sort-merge joins.
+
+**6. What happens with a join on a `<` or `between` condition?**
+
+Spark can't use hash or sort-merge, so it uses a broadcast nested loop join if one side is small, or a cartesian product otherwise, which compares every pair and can be extremely slow.
+
+### 10_caching_persistence
+
+**1. What is the difference between `cache()` and `persist()`?**
+
+`cache()` is `persist()` with the default storage level, which is `MEMORY_AND_DISK` for DataFrames. `persist()` lets you choose a level, such as `MEMORY_ONLY`, `DISK_ONLY` or a replicated variant.
+
+**2. Is `cache()` an action?**
+
+No, it's lazy. It marks the DataFrame, and the next action computes and stores it.
+
+**3. When should you cache?**
+
+When an expensive DataFrame is reused by several actions, for example in iterative algorithms or when many outputs come from one joined dataset, and it fits comfortably in cluster memory.
+
+**4. When should you not cache?**
+
+When the data is used once, is cheap to recompute, is too large for memory, or must reflect changing sources. And always unpersist when finished.
+
+**5. What happens to cached data if an executor fails?**
+
+Its cached partitions are lost and Spark recomputes them from the lineage the next time they're needed, unless a replicated storage level kept a copy elsewhere.
+
+**6. How do you handle reuse on Databricks serverless, where caching isn't supported?**
+
+Write the intermediate result to a Delta table and read it back. Repeated reads benefit from the automatic disk cache, and the table can be shared across tasks and sessions.
+
+**7. What is the Databricks disk cache?**
+
+An automatic cache that stores copies of remote Parquet and Delta files on the workers' local SSDs, so repeated reads avoid cloud storage. It validates files, so it doesn't serve stale data.
+
+### 11_serialization
+
+**1. Where does serialization happen in Spark?**
+
+When tasks and their closures are shipped to executors, when data is shuffled or cached, when data moves between the JVM and Python (UDFs, `toPandas`, `createDataFrame` from pandas), and when results are returned to the driver or client.
+
+**2. What is the difference between Java serialization and Kryo?**
+
+Java serialization works for any `Serializable` class but is slow and produces large output. Kryo is faster and more compact, especially with registered classes. It mainly matters for RDDs of objects. DataFrames use Tungsten's binary format instead.
+
+**3. Why do DataFrames serialize more efficiently than RDDs?**
+
+Because the schema is known, rows are stored in Tungsten's compact binary format and can be shuffled, cached, hashed and compared without generic object serialization.
+
+**4. Why is a Python UDF slow, from a serialization point of view?**
+
+Every row is serialized from the JVM to a Python worker and the results are serialized back. Classic UDFs use pickle row by row. pandas and Arrow UDFs move columnar Arrow batches, which is much cheaper.
+
+**5. What causes `PicklingError: Could not serialize object`?**
+
+A function sent to executors references an object that can't be pickled, such as a lock, a database connection, a file handle or the SparkSession. Create those objects inside the function or once per partition.
+
+**6. How do you share a large lookup table with executors?**
+
+Put it in a DataFrame and join, letting Spark broadcast it if it's small. On classic compute, broadcast variables are another option, but they aren't available with Spark Connect.
+
+### 12_catalyst_and_tungsten
+
+**1. What is the Catalyst optimizer?**
+
+Spark SQL's extensible query optimizer. It analyzes a query against the catalog, applies rule-based optimizations such as predicate pushdown, column pruning, constant folding and combining filters, uses statistics for cost-based choices like join strategy, and produces a physical plan.
+
+**2. What are the phases of Catalyst?**
+
+Analysis (resolve names and types), logical optimization (rule-based rewrites), physical planning (choose operators, with cost-based decisions), and code generation for execution.
+
+**3. What is Tungsten?**
+
+Spark's execution engine work focused on CPU and memory efficiency: a compact binary row format, off-heap memory management, whole-stage code generation that fuses operators into a single function, and vectorized columnar reads.
+
+**4. What is whole-stage code generation?**
+
+Spark compiles a chain of operators within a stage into one generated Java function with a tight loop, avoiding per-row virtual calls between operators. In plans, operators in the same generated function share a `*(n)` prefix.
+
+**5. Why are DataFrames faster than RDDs?**
+
+DataFrames have a schema, so Catalyst can optimize the whole query and Tungsten can store rows in a compact binary format and generate efficient code. RDD operations are opaque functions over objects, executed as written, with object serialization overhead.
+
+**6. Why can't Catalyst optimize UDFs?**
+
+A UDF is a black box: Catalyst doesn't know its logic, so it can't push it down, fold it, combine it or include it in code generation.
+
+**7. What is Photon?**
+
+Databricks' native, vectorized query engine written in C++. It executes SQL and DataFrame operators faster than the JVM engine without code changes, and it's used by serverless compute and SQL warehouses.
+
+### 13_adaptive_query_execution
+
+**1. What is Adaptive Query Execution?**
+
+A Spark 3 feature that re-optimizes the physical plan at runtime using real statistics from completed shuffle stages, instead of relying only on estimates made before execution.
+
+**2. What are the main AQE optimizations?**
+
+Coalescing small shuffle partitions into fewer, larger ones; switching a sort-merge join to a broadcast hash join when a side turns out small; and splitting skewed partitions in sort-merge joins.
+
+**3. How does AQE detect a skewed partition?**
+
+A partition is skewed if it's larger than a factor (5 by default) times the median partition size and also larger than a threshold (256 MB by default). AQE then splits it and replicates the matching data from the other side.
+
+**4. Why does `explain()` show `isFinalPlan=false`?**
+
+Because the plan can still change at runtime. The final adaptive plan is visible in the Spark UI's SQL tab or the Databricks query profile after the query runs.
+
+**5. What can't AQE fix?**
+
+Problems before the first shuffle (such as file-read partitioning or a single huge file), skew in aggregations, poor data layout, and inefficient code such as Python UDFs.
+
+**6. Do you still need to tune `spark.sql.shuffle.partitions` with AQE?**
+
+Much less. AQE coalesces small partitions, so a reasonably high value works well. For very large shuffles you may still raise it, so the initial partitions aren't too big before coalescing.
+
+### 14_spark_ui
+
+**1. A Spark job is slow. How do you debug it?**
+
+I find the slowest job and stage in the Spark UI or query profile. Then I check the task distribution in that stage: if the max is far above the median, it's skew. Then shuffle read/write and spill: large shuffles mean too much data moved, and spill means partitions are too big. Then task count against cores, for under- or over-partitioning. Then the SQL plan: join strategy, pushed filters, and rows per operator. And finally executor health, such as GC time and failures. Then I fix the biggest cause and measure again.
+
+**2. What are the main tabs of the Spark UI?**
+
+Jobs, Stages, SQL/DataFrame, Storage, Environment and Executors.
+
+**3. How do you spot data skew in the Spark UI?**
+
+In the Stages tab, the task metric summary shows a max duration and input far above the median, typically one or a few tasks running much longer than the rest.
+
+**4. What does spill mean, and what do you do about it?**
+
+Data that didn't fit in execution memory was written to disk during a sort, aggregation or join. I increase the number of shuffle partitions, reduce the data per row, or fix skew.
+
+**5. How do you monitor queries on Databricks serverless?**
+
+With the query profile of each statement (time, rows, bytes and spill per operator, with the final plan), the Query History page, and system tables such as `system.query.history` for analysis across runs.
+
+**6. Why might the plan in `explain()` differ from the Spark UI?**
+
+With AQE, `explain()` shows the initial plan. The UI's SQL tab and the query profile show the final plan after runtime re-optimization, such as coalesced partitions, converted joins and skew splits.
+
+### 15_internals_interview_qa
+
+**1. What happens when I run `df.groupBy("country").count()` and then call `.show()`?**
+
+Nothing runs on `groupBy` or `count`: they only build a logical plan. `show()` is the action, so the driver creates a job. Catalyst optimizes the plan, for example pruning unused columns and pushing filters into the scan, and plans a two-step aggregation. The DAG scheduler cuts the plan at the shuffle into two stages. In stage one, each task reads one input partition and does a partial count per country inside that partition, then writes the partial results to shuffle files, hashed by country. In stage two, each task fetches the blocks for its countries from every map task and adds up the partial counts. AQE may coalesce the 200 shuffle partitions into a few because the result is small. Finally `show()` fetches the first 20 rows back to the driver.
+
+**2. How does a shuffle work, and why is it expensive?**
+
+A shuffle redistributes rows so that all rows with the same key land in the same partition. Each map task computes a target partition for every row, buffers and sorts by target, and writes one data file plus an index to local disk. Once all map tasks are done, each reduce task fetches its blocks from every map output over the network and merges them. It's expensive because of serialization, disk writes and reads, network transfer, memory pressure that can cause spill, and the barrier between stages. I reduce it by filtering and selecting before wide operations, broadcasting small join sides, removing redundant repartitions and sorts, and handling skew.
+
+**3. Broadcast join vs sort-merge join?**
+
+A broadcast hash join collects the small table to the driver and sends a copy to every executor, which builds a hash table. The large table is then joined partition by partition without being shuffled, which makes it the fastest strategy when one side is small. Spark uses it below the 10 MB threshold, with a hint, or when AQE sees a small side at runtime. A sort-merge join shuffles both sides by the join key, sorts each partition, and merges them. It scales to any size and can spill to disk, but costs two shuffles and two sorts. It's the default for large equi-joins. Broadcasting a table that's too big can crash the driver, and you can't broadcast the preserved side of an outer join.
+
+**4. What is lazy evaluation and why does Spark use it?**
+
+Transformations only record steps in a plan. Execution starts when an action is called. Because Spark sees the whole query first, Catalyst can push filters into the scan, prune unused columns, combine and reorder steps, choose join strategies and fuse narrow operators into one generated function, and `limit` can stop early. The costs: each action recomputes from the source unless results are materialized, and data errors only appear at the action.
+
+**5. Explain jobs, stages and tasks.**
+
+Each action creates a job. The job is split into stages at shuffle boundaries, which are the `Exchange` operators in the plan, so a simple query with one groupBy has two stages. Each stage runs as a set of tasks, one per partition, and each task runs on one executor core. If there are more tasks than cores, they run in waves, and the stage finishes when its slowest task does, which is why skew matters.
+
+**6. What is Adaptive Query Execution?**
+
+AQE re-optimizes the plan at runtime. After each shuffle stage finishes, Spark knows the real partition sizes and re-plans the rest: it coalesces small shuffle partitions into fewer tasks, converts a sort-merge join into a broadcast join when one side turns out small, and splits skewed partitions in joins. It's on by default in Spark 3 and always on for Databricks serverless. `explain()` shows the initial plan, and the Spark UI or query profile shows the final one.
+
+**7. What does the driver do?**
+
+It runs the main program, holds the SparkSession, plans the query, schedules tasks on executors, and collects results.
+
+**8. What is an executor?**
+
+A process on a worker node that runs tasks on its cores and stores shuffle and cached data for one application.
+
+**9. Narrow vs wide transformation?**
+
+Narrow: each output partition depends on one input partition, so there's no shuffle. Wide: it needs data from many partitions, so there's a shuffle and a new stage.
+
+**10. `repartition` vs `coalesce`?**
+
+`repartition` shuffles to create balanced partitions and can increase or decrease the count. `coalesce` merges partitions without a shuffle and can only decrease the count.
+
+**11. What is `spark.sql.shuffle.partitions`?**
+
+The number of partitions after a shuffle, 200 by default. AQE coalesces small ones at runtime.
+
+**12. `cache` vs `persist`?**
+
+`cache` is `persist` with `MEMORY_AND_DISK`. Both are lazy and filled by the next action. They aren't supported on serverless, where you write a Delta table instead.
+
+**13. What is Catalyst?**
+
+Spark SQL's optimizer: analysis, rule-based logical optimization, physical planning with statistics, then code generation.
+
+**14. What is Tungsten?**
+
+The execution engine work on CPU and memory efficiency: binary row format, whole-stage code generation and vectorized reads.
+
+**15. Why are DataFrames faster than RDDs?**
+
+The schema lets Catalyst optimize the whole query and Tungsten use compact binary rows and generated code. RDD lambdas are opaque and run as written.
+
+**16. Why avoid Python UDFs?**
+
+Rows are serialized to Python workers and back, and the optimizer can't push down, fold or code-generate them.
+
+**17. What is data skew?**
+
+An uneven distribution of rows across partitions, usually because of hot keys, which makes a few tasks much slower than the rest.
+
+**18. What is spill?**
+
+Data written to disk because it didn't fit in execution memory during a sort, aggregation or join.
+
+**19. What does `Exchange` mean in a plan?**
+
+A shuffle, and therefore a stage boundary.
+
+**20. What is whole-stage code generation?**
+
+Fusing a chain of operators into one generated Java function, shown as `*(n)` in plans.
+
+**21. What is Spark Connect?**
+
+A client-server protocol where a thin client sends plans to a remote Spark driver. It's used by Databricks serverless notebooks, so there's no `sparkContext`.
+
+**22. What is Photon?**
+
+Databricks' native vectorized C++ query engine, which accelerates SQL and DataFrame operations without code changes.
+
+**23. One task in a stage takes 30 minutes while the others take 30 seconds. What do you do?**
+
+That's skew. I confirm it in the stage's task summary or the query profile, then find the hot key with a `groupBy(key).count()`. Fixes: let AQE skew join handling split it, broadcast the smaller side if possible, filter out or separately process the hot key, or salt the key by adding a random suffix and aggregating in two steps.
+
+**24. A job writes 20,000 tiny files. Why, and how do you fix it?**
+
+Each task writes a file per output partition it touches, so many partitions, or high-cardinality `partitionBy` columns, produce tiny files. I coalesce or repartition to a sensible number before writing, repartition by the partition column, choose coarser partition columns, and on Delta run `OPTIMIZE` or enable auto compaction, or use liquid clustering.
+
+**25. A join is slow. How do you debug it?**
+
+I check the plan for the join strategy and whether the small side was broadcast, the size of the shuffle on each side, skew in the join key, rows exploding after the join because of duplicate keys, and whether filters and column pruning happen before the join. Then I fix the biggest issue: broadcast, filter earlier, deduplicate keys, or handle skew.
+
+**26. The driver crashes with out-of-memory. What are the likely causes?**
+
+`collect()` or `toPandas()` on large data, a very large broadcast, too many tiny tasks or files for the driver to track, or a huge `display()`. I aggregate or limit before bringing data back, and avoid oversized broadcasts.
+
+**27. The same notebook gives different results when re-run. Why?**
+
+Non-deterministic expressions such as `uuid()` are recomputed per action, unordered operations such as `dropDuplicates` or `first` pick arbitrary rows, or sorts have ties. I add deterministic ordering and tie-breakers, and materialize results that must be stable.

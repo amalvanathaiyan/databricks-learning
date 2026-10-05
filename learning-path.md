@@ -145,21 +145,21 @@ databricks-learning/
 
 Execution flow to be able to draw and explain: Application → Driver → Job → Stages → Tasks → Executors → Output.
 
-- [ ] `01_driver_executors`: roles, cluster manager, how work is distributed
-- [ ] `02_jobs_stages_tasks`: how actions trigger jobs, stage boundaries, task counts
-- [ ] `03_transformations_actions`: full classification, common interview traps
-- [ ] `04_lazy_evaluation`: why Spark is lazy, benefits, proving it with `explain()`
-- [ ] `05_dag_and_query_plans`: logical vs physical plan, reading `explain("formatted")`
-- [ ] `06_narrow_wide_transformations`: examples, why wide ones cause shuffles
-- [ ] `07_shuffle`: what happens, why expensive, shuffle partitions setting
-- [ ] `08_partitioning_and_parallelism`: `repartition` vs `coalesce`, partition sizing, relationship between partitions, cores and tasks
-- [ ] `09_broadcast_and_join_strategies`: broadcast hash, sort-merge, shuffle hash; broadcast hints
-- [ ] `10_caching_persistence`: `cache` vs `persist`, storage levels, when it hurts
-- [ ] `11_serialization`: Java vs Kryo, why it matters, UDF serialization cost
-- [ ] `12_catalyst_and_tungsten`: optimizer stages, code generation, why DataFrames beat RDDs
-- [ ] `13_adaptive_query_execution`: coalescing partitions, skew join handling, dynamic broadcast
-- [ ] `14_spark_ui`: jobs, stages, tasks, SQL and storage tabs, what to look at first
-- [ ] `15_internals_interview_qa`: consolidated spoken answers
+- [x] `01_driver_executors`: roles, cluster manager, how work is distributed
+- [x] `02_jobs_stages_tasks`: how actions trigger jobs, stage boundaries, task counts
+- [x] `03_transformations_actions`: full classification, common interview traps
+- [x] `04_lazy_evaluation`: why Spark is lazy, benefits, proving it with `explain()`
+- [x] `05_dag_and_query_plans`: logical vs physical plan, reading `explain("formatted")`
+- [x] `06_narrow_wide_transformations`: examples, why wide ones cause shuffles
+- [x] `07_shuffle`: what happens, why expensive, shuffle partitions setting
+- [x] `08_partitioning_and_parallelism`: `repartition` vs `coalesce`, partition sizing, relationship between partitions, cores and tasks
+- [x] `09_broadcast_and_join_strategies`: broadcast hash, sort-merge, shuffle hash; broadcast hints
+- [x] `10_caching_persistence`: `cache` vs `persist`, storage levels, when it hurts
+- [x] `11_serialization`: Java vs Kryo, why it matters, UDF serialization cost
+- [x] `12_catalyst_and_tungsten`: optimizer stages, code generation, why DataFrames beat RDDs
+- [x] `13_adaptive_query_execution`: coalescing partitions, skew join handling, dynamic broadcast
+- [x] `14_spark_ui`: jobs, stages, tasks, SQL and storage tabs, what to look at first
+- [x] `15_internals_interview_qa`: consolidated spoken answers
 
 ---
 
@@ -352,7 +352,7 @@ Target architecture to be able to draw and explain: Sources → ADF / ADLS Gen2 
 |---|---|---|---|---|
 | 00 | Platform tour | Complete | | 2026-10-05 |
 | 01 | Spark basics | Complete | | 2026-10-05 |
-| 02 | Spark internals | Not started | | |
+| 02 | Spark internals | Complete | | 2026-10-05 |
 | 03 | Delta Lake | Not started | | |
 | 04 | Databricks | Not started | | |
 | 05 | Optimization | Not started | | |

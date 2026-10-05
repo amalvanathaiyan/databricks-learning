@@ -34,7 +34,7 @@ for how the lessons map to the exam domains.
 |---|---|---|
 | [00_platform_tour](00_platform_tour/) | Platform tour | ✅ Complete (4 lessons) |
 | [01_spark_basics](01_spark_basics/) | PySpark basics (30 lessons) | ✅ Complete (30 lessons) |
-| 02_spark_internals | Spark internals | Not started |
+| [02_spark_internals](02_spark_internals/) | Spark internals | ✅ Complete (15 lessons) |
 | 03_delta_lake | Delta Lake | Not started |
 | 04_databricks | Databricks platform | Not started |
 | 05_optimization | Performance and optimization | Not started |
