@@ -88,7 +88,7 @@ Status: ✅ written · 🔜 planned (see `learning-path.md`)
 | Lesson | Status |
 |---|---|
 | `00_02_notebook_basics` (widgets, `%run`) | ✅ |
-| `07_workflows/01`–`06` | 🔜 |
+| `07_workflows/01`–`06` (jobs, dependencies and control flow, retries and repair, declarative pipelines, expectations, notebook workflows) | ✅ |
 
 ### 5. Implementing CI/CD (10%)
 
@@ -99,7 +99,8 @@ Status: ✅ written · 🔜 planned (see `learning-path.md`)
 | Lesson | Status |
 |---|---|
 | `00_04_git_workflow` | ✅ |
-| `07_workflows/07_testing_and_code_structure`, `09_azure_databricks/10_ci_cd` | 🔜 |
+| `07_workflows/07_testing_and_code_structure` | ✅ |
+| `09_azure_databricks/10_ci_cd` | 🔜 |
 
 ### 6. Troubleshooting, Monitoring and Optimization (10%)
 

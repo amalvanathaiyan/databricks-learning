@@ -3,7 +3,7 @@
 Interview questions from every lesson, with short spoken-style answers.
 Practise by covering the answer, saying yours out loud, then comparing.
 
-**561 questions** across 87 lessons.
+**593 questions** across 94 lessons.
 
 Generated from each notebook's **Interview Q&A** section by `tools/build_question_bank.py`.
 Edit the notebooks, then run the script again.
@@ -2439,3 +2439,147 @@ Masking hides values at query time based on who's asking, while the stored data 
 **5. Which functions are useful inside dynamic views and policies?**
 
 `current_user()` to identify the user, and `is_account_group_member('group')` to check account-level group membership. Mapping tables can be referenced with `EXISTS` subqueries.
+
+## 07 Workflows
+
+### 01_jobs_basics
+
+**1. What are the main parts of a Databricks job?**
+
+Tasks (notebooks, scripts, wheels, SQL, pipelines, dbt, and control-flow tasks) with dependencies, compute for each task (serverless or job clusters), triggers (schedule, file arrival, table update, continuous, manual), job parameters, notifications, retries and timeouts, permissions, and the run-as identity.
+
+**2. Why use job compute or serverless instead of an all-purpose cluster for jobs?**
+
+They're cheaper per DBU, isolated per run, and exist only while the job runs. All-purpose clusters are meant for interactive work and keep running (and costing) between jobs.
+
+**3. How do you make a daily job safe to re-run and backfill?**
+
+Parameterize the date (`run_date`), and make the write idempotent for that slice: overwrite with `replaceWhere`, `MERGE` on keys, or `INSERT OVERWRITE` the partition. Then re-runs and backfills give the same result.
+
+**4. How do job parameters reach a notebook task?**
+
+As widgets: the notebook reads them with `dbutils.widgets.get("name")`. Defaults come from the job parameter definition, and values can be overridden per run.
+
+**5. How can you define jobs as code?**
+
+With Databricks Asset Bundles (YAML resources deployed with the Databricks CLI), the Jobs REST API or SDK, or Terraform. Bundles are the standard way to version jobs in Git and promote them between environments.
+
+### 02_task_dependencies_parameters
+
+**1. How do tasks in a Databricks job share information?**
+
+Through task values for small values (`dbutils.jobs.taskValues.set` and `get`, or `{{tasks..values.}}` references in task settings), and through tables or files for data. Job parameters are shared by all tasks.
+
+**2. What does `run_if` do?**
+
+It decides whether a task runs based on its upstream tasks' results: `ALL_SUCCESS` by default, or `ALL_DONE`, `NONE_FAILED`, `AT_LEAST_ONE_SUCCESS`, `AT_LEAST_ONE_FAILED`, `ALL_FAILED`. It's used for cleanup, alerting and tolerant fan-in.
+
+**3. How do you branch in a job?**
+
+With an if/else condition task comparing two values, often a task value and a constant, and dependencies on its `true` or `false` outcome. Tasks on the branch not taken are excluded, and the run still succeeds.
+
+**4. When would you use a for each task?**
+
+To run the same task for each element of a list, such as countries, tables or dates, with controlled concurrency. Each iteration can be monitored and repaired individually.
+
+**5. Why split a pipeline into multiple tasks?**
+
+Parallelism for independent steps, isolation of failures, repairing only failed tasks, different compute per task, and a clear graph for monitoring.
+
+### 03_retries_alerts_monitoring
+
+**1. How do you handle transient failures in Databricks jobs?**
+
+Configure task retries with an interval (`max_retries`, `min_retry_interval_millis`), and retry individual external calls inside the task with exponential backoff. Most importantly, make the task idempotent (`MERGE`, `replaceWhere`) so a retry can't duplicate data.
+
+**2. What is a repair run?**
+
+Re-running only the failed and skipped tasks of a job run, keeping the successful ones, optionally with changed parameters. It saves time and compute compared to re-running the whole job.
+
+**3. What's the difference between a timeout and a duration warning?**
+
+A timeout stops the task or job when it exceeds the limit. A duration warning (a health rule on run duration) sends a notification but lets the run continue.
+
+**4. How would you monitor many jobs?**
+
+Notifications on failure and duration thresholds to team channels, the Jobs UI run history, and queries on `system.lakeflow` tables (job runs and task runs) for failure rates and duration trends, often in a dashboard with alerts.
+
+**5. Why limit concurrent runs and enable queueing?**
+
+To prevent overlapping runs of the same job from processing the same data concurrently. With queueing, a trigger that arrives while a run is active waits instead of being skipped.
+
+### 04_lakeflow_declarative_pipelines
+
+**1. What is the difference between a streaming table and a materialized view in Lakeflow Declarative Pipelines?**
+
+A streaming table processes each input record once, incrementally, from an append-only source, which suits ingestion and append-style transformations. A materialized view holds the result of a query and is refreshed on each update (incrementally when possible), so it always reflects its sources, including updates and deletes. That suits aggregations and joins.
+
+**2. What are expectations, and what are the three violation actions?**
+
+Data quality rules declared on a dataset. The default (warn) keeps the invalid records and records metrics. `DROP ROW` removes them. `FAIL UPDATE` stops the update. Metrics for all three appear in the event log and UI.
+
+**3. What does a declarative pipeline handle for you compared to hand-written Spark jobs?**
+
+Dependency ordering from the queries, incremental processing and checkpoints, retries, compute management, data quality metrics, lineage and table maintenance.
+
+**4. What is a full refresh?**
+
+An update that clears the pipeline's tables and streaming state and reprocesses all source data. It's used after logic changes that must apply to historical data.
+
+**5. Triggered vs continuous pipelines?**
+
+Triggered pipelines process all available data and stop, usually on a schedule. Continuous pipelines keep running and process data as it arrives, for low latency at higher cost.
+
+### 05_data_quality_expectations
+
+**1. How do you handle bad records in a pipeline?**
+
+Define rules centrally, then decide per rule: warn for suspicious but usable data, drop for unusable records we can lose, quarantine with reasons for records that must be reviewed and replayed, and fail for issues that would corrupt results. I also track violation counts per batch and fail the load if the bad share exceeds a threshold, because that usually means a broken feed.
+
+**2. How do you implement a quarantine table in Lakeflow Declarative Pipelines?**
+
+Apply `expect_all_or_drop` with the rules on the clean table, and create a second table that reads the same source with the inverted condition (any rule failing, treating NULL as a failure), so invalid records are kept with their data for review.
+
+**3. What's the difference between expectations and Delta `CHECK` constraints?**
+
+A `CHECK` constraint rejects the whole write if any row violates it, on any writer. Expectations work inside pipelines and can warn, drop rows or fail the update, with metrics recorded per rule.
+
+**4. How do you monitor data quality over time?**
+
+Store per-batch, per-rule violation counts (from the pipeline event log or a metrics table), chart them in a dashboard, and alert on spikes relative to the usual rate.
+
+### 06_notebook_workflows
+
+**1. What is the difference between `%run` and `dbutils.notebook.run`?**
+
+`%run` executes another notebook inline in the current context, so its variables and functions become available, but it takes no parameters and returns nothing. `dbutils.notebook.run` starts the notebook as a separate run with parameters (as widgets) and a timeout, doesn't share variables, and returns the string passed to `dbutils.notebook.exit`. It can also be run in parallel from threads.
+
+**2. How do you share code across notebooks in a maintainable way?**
+
+Put the logic in Python modules or packages (files in a Git folder, or a wheel), import what's needed, and unit-test it with pytest. `%run` is fine for a small config notebook, and jobs handle orchestration.
+
+**3. How can a child notebook return results?**
+
+With `dbutils.notebook.exit(value)`, which returns one string, often JSON. Larger results go to a table, and the child returns the table name or a status.
+
+**4. When would you use `dbutils.notebook.run` instead of a job with several tasks?**
+
+For simple, dynamic chaining inside an interactive or one-task workflow, for example running the same notebook for a list computed at run time. For production pipelines, a multi-task job (with for each tasks for fan-out) is better because of retries, repair and monitoring.
+
+### 07_testing_and_code_structure
+
+**1. How do you unit-test PySpark code?**
+
+I keep transformations as pure functions that take and return DataFrames, then write pytest tests that build tiny DataFrames with edge cases, call the function, and compare with `assertDataFrameEqual` and `assertSchemaEqual`. A `spark` fixture comes from a local session or Databricks Connect in CI.
+
+**2. What's the difference between unit tests and data tests?**
+
+Unit tests check code logic with constructed inputs, before deployment. Data tests (or expectations) check properties of real data after each run: unique keys, no nulls in required columns, valid ranges, expected row counts.
+
+**3. How would you structure a Databricks project in Git?**
+
+A bundle (`databricks.yml` with dev and prod targets), job and pipeline definitions in `resources/`, logic in a Python package under `src/`, thin notebooks or entry points that do I/O and call the package, and `tests/` with pytest. CI runs tests and `bundle validate` on pull requests and deploys on merge.
+
+**4. How do you run tests against Databricks from CI?**
+
+With Databricks Connect, which gives the tests a Spark session backed by Databricks compute, authenticated as a service principal (OAuth). Alternatively, run tests as a job task after deploying to a dev target.

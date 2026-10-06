@@ -227,13 +227,13 @@ Execution flow to be able to draw and explain: Application → Driver → Job �
 
 ## 07_workflows (1.5 weeks)
 
-- [ ] `01_jobs_basics`: tasks, schedules, triggers
-- [ ] `02_task_dependencies_parameters`: multi-task DAGs, job parameters, task values
-- [ ] `03_retries_alerts_monitoring`: retries, timeouts, notifications, run history
-- [ ] `04_lakeflow_declarative_pipelines`: streaming tables, materialized views, expectations (formerly DLT)
-- [ ] `05_data_quality_expectations`: drop/fail/warn behaviors, quarantine patterns
-- [ ] `06_notebook_workflows`: `%run` vs `dbutils.notebook.run`, modular code
-- [ ] `07_testing_and_code_structure`: unit-testing transformations, production repo structure
+- [x] `01_jobs_basics`: tasks, schedules, triggers
+- [x] `02_task_dependencies_parameters`: multi-task DAGs, job parameters, task values
+- [x] `03_retries_alerts_monitoring`: retries, timeouts, notifications, run history
+- [x] `04_lakeflow_declarative_pipelines`: streaming tables, materialized views, expectations (formerly DLT)
+- [x] `05_data_quality_expectations`: drop/fail/warn behaviors, quarantine patterns
+- [x] `06_notebook_workflows`: `%run` vs `dbutils.notebook.run`, modular code
+- [x] `07_testing_and_code_structure`: unit-testing transformations, production repo structure
 
 ---
 
@@ -357,7 +357,7 @@ Target architecture to be able to draw and explain: Sources → ADF / ADLS Gen2 
 | 04 | Databricks | Complete | | 2026-10-05 |
 | 05 | Optimization | Complete | | 2026-10-05 |
 | 06 | Unity Catalog | Complete | | 2026-10-05 |
-| 07 | Workflows | Not started | | |
+| 07 | Workflows | Complete | | 2026-10-06 |
 | 08 | Streaming and ingestion | Not started | | |
 | 09 | Azure Databricks | Not started | | |
 | - | Projects | Not started | | |
